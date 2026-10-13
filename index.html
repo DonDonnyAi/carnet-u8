@@ -593,7 +593,7 @@ const view=document.getElementById('view'), topbar=document.getElementById('top'
 const TABS=[['seances','Séances',I.cal],['blocs','Blocs',I.layers],['exos','Exercices',I.ex],['joueurs','Joueurs','<span class="emo" aria-hidden="true">👥</span>'],['favs','Favoris',I.star],['outils','Outils',I.tools]];
 let route='seances', trail=[], scrollMem={};
 let q='', filt='all', onlyMain=false;
-function tabOf(r){const h=r.split(':')[0];return {seances:'seances',seance:'seances',plan:'seances',blocs:'blocs',bloc:'blocs',grille:'blocs',cr:'blocs',exos:'exos',exo:'exos',favs:'favs',outils:'outils',tests:'outils',fiche:'outils',joueurs:'joueurs',joueur:'joueurs',plateau:'seances',lundi:'outils',terrain:'outils',principes:'outils',legende:'outils','plan-img':'exos'}[h]||'seances'}
+function tabOf(r){const h=r.split(':')[0];return {seances:'seances',seance:'seances',plan:'seances',blocs:'blocs',bloc:'blocs',grille:'blocs',cr:'blocs',exos:'exos',exo:'exos',favs:'favs',outils:'outils',tests:'outils',fiche:'outils',joueurs:'joueurs',joueur:'joueurs',plateau:'seances',lundi:'outils',terrain:'outils',principes:'outils',legende:'outils',admin:'outils','plan-img':'exos'}[h]||'seances'}
 function go(r,opts){
   scrollMem[route]=window.scrollY;
   const isTab=TABS.some(t=>t[0]===r);
@@ -644,6 +644,7 @@ function renderView(){
   else if(h==='terrain') html=vTerrain();
   else if(h==='principes') html=vPrincipes();
   else if(h==='legende') html=vLegende();
+  else if(h==='admin') html=vAdmin();
   else if(h==='plan-img') html=vImg(route.slice(9));
   else if(h==='blocs') html=vBlocs();
   else if(h==='bloc') html=vBloc(a);
@@ -812,6 +813,24 @@ function vFavs(){
   return `<div class="count">${l.length} exercice${l.length>1?'s':''}</div><div class="grid">${l.map(card).join('')}</div>`;
 }
 
+/* Administration : comptes éducateurs (réservé à l'administrateur) */
+function vAdmin(){
+  renderChrome('Comptes éducateurs');
+  if(!(window.__u8isAdmin&&window.__u8isAdmin())) return `<div class="empty"><b>Accès réservé</b>Cette page est réservée à l'administrateur.</div>`;
+  setTimeout(()=>{try{window.__u8admin.load()}catch(e){}},0);
+  return `<div class="stack">
+  <div class="card field"><h2>Nouvel éducateur</h2>
+  <form id="admForm" novalidate>
+  <label for="admEmail" class="muted" style="font-size:.9rem">Email</label>
+  <input class="inp" id="admEmail" type="email" inputmode="email" autocapitalize="off" spellcheck="false" autocomplete="off" placeholder="prenom@exemple.fr">
+  <label for="admPass" class="muted" style="font-size:.9rem;display:block;margin-top:10px">Mot de passe (modifiable)</label>
+  <input class="inp" id="admPass" type="text" autocapitalize="off" spellcheck="false" autocomplete="off">
+  <p class="muted" id="admMsg" role="status" style="font-size:.92rem;margin:10px 0 0"></p>
+  <button class="btn" type="submit" style="margin-top:10px">Créer le compte</button></form></div>
+  <div class="sec"><h2>Comptes existants</h2><div id="admList"><p class="muted">Chargement…</p></div></div>
+  </div>`;
+}
+
 /* Outils */
 function vOutils(){
   renderChrome('Outils');
@@ -828,6 +847,7 @@ function vOutils(){
   <button class="tool cat-technique" data-bk="import"><span class="ic">${I.copy}</span><span><b>Restaurer une sauvegarde</b><span class="s">Remplace les données de ce téléphone</span></span></button>
   <input type="file" id="bkfile" accept=".json,application/json" hidden>
   <p class="saved" id="bkmsg" role="status">Fais une sauvegarde de temps en temps et envoie-la-toi (mail, messagerie).</p></div>
+  ${(window.__u8isAdmin&&window.__u8isAdmin())?`<div class="sec" style="margin-top:6px"><h2>Administration</h2><button class="tool cat-placement" data-go="admin"><span class="ic">${I.user}</span><span><b>Comptes éducateurs</b><span class="s">Créer, voir et supprimer les accès</span></span></button></div>`:''}
   <div class="sec" style="margin-top:6px"><h2>Compte</h2>
   <button class="tool cat-duel" data-logout><span class="ic">${I.user}</span><span><b>Se déconnecter</b><span class="s">${esc(window.__u8email?window.__u8email():'')} · efface les données de cet appareil (elles restent dans ton compte)</span></span></button></div>
   </div><button class="chip theme-toggle" data-theme-toggle>Changer le thème clair / sombre</button>`;
@@ -1704,6 +1724,68 @@ async function logout(force){
 document.addEventListener('click',ev=>{
   const b=ev.target.closest('[data-logout]'); if(!b) return;
   ev.preventDefault(); logout(false);
+});
+
+/* ---------- Administration des comptes (réservée à l'admin ; la vraie vérification est côté serveur) ---------- */
+const ADMIN_EMAIL='karim@fcm-u8.fr';
+window.__u8isAdmin=()=>!!(session&&session.user&&String(session.user.email||'').toLowerCase()===ADMIN_EMAIL);
+const genPass=()=>{const A='abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789',b=new Uint32Array(10); crypto.getRandomValues(b); return Array.from(b,x=>A[x%A.length]).join('')};
+async function call(body){
+  const r=await sb.functions.invoke('admin-users',{body});
+  if(r.error){
+    let m='';
+    try{const j=await r.error.context.json(); m=j&&j.error||''}catch(e){}
+    if(!m&&isNet(r.error)) m='Pas de réseau. Réessaie.';
+    throw new Error(m||"Le service d'administration ne répond pas. Il n'est peut-être pas encore installé.");
+  }
+  if(r.data&&r.data.error) throw new Error(r.data.error);
+  return r.data;
+}
+const admMsg=(t)=>{const m=$('admMsg'); if(m) m.textContent=t||''};
+const fdate=s=>{try{return s?new Date(s).toLocaleDateString('fr-FR'):'jamais'}catch(e){return ''}};
+let lastCreds=null;
+async function admLoad(){
+  const box=$('admList'); if(!box) return;
+  const f=$('admPass'); if(f&&!f.value) f.value=genPass();
+  try{
+    const d=await call({action:'list'});
+    const L=(d.users||[]).sort((a,b)=>(b.admin-a.admin)||String(a.email).localeCompare(String(b.email)));
+    box.innerHTML=(lastCreds?'<div class="note" style="margin-bottom:10px"><span><b>Accès prêt.</b> À transmettre à l\'éducateur (ce mot de passe ne sera plus affiché) :<br>Email : <b>'+esc(lastCreds.email)+'</b><br>Mot de passe : <b>'+esc(lastCreds.password)+'</b></span></div>':'')+
+      (L.length?L.map(u=>'<div class="card" style="margin-bottom:8px"><div style="font-weight:700;word-break:break-all">'+esc(u.email)+(u.admin?' · administrateur':'')+'</div>'+
+        '<div class="muted" style="font-size:.88rem">Créé le '+fdate(u.created_at)+' · dernière connexion : '+fdate(u.last_sign_in_at)+'</div>'+
+        (u.admin?'':'<div class="row" style="margin-top:8px;gap:8px"><button class="btn sec2" data-adm="reset" data-id="'+esc(u.id)+'" data-email="'+esc(u.email)+'">Nouveau mot de passe</button><button class="btn alt" data-adm="del" data-id="'+esc(u.id)+'" data-email="'+esc(u.email)+'">Supprimer</button></div>')+'</div>').join(''):'<p class="muted">Aucun compte.</p>');
+  }catch(e){box.innerHTML='<p class="muted" role="alert">'+esc(e.message)+'</p>'}
+}
+window.__u8admin={load:admLoad};
+document.addEventListener('submit',async ev=>{
+  if(!ev.target||ev.target.id!=='admForm') return;
+  ev.preventDefault();
+  if(!window.__u8isAdmin()) return;
+  const em=$('admEmail').value.trim().toLowerCase(), pw=$('admPass').value, btn=ev.target.querySelector('button[type=submit]');
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return admMsg('Écris un email valide.');
+  if(pw.length<8) return admMsg('Mot de passe : 8 caractères minimum.');
+  btn.disabled=true; admMsg('Création…');
+  try{
+    await call({action:'create',email:em,password:pw});
+    lastCreds={email:em,password:pw};
+    $('admEmail').value=''; $('admPass').value=genPass(); admMsg('');
+    await admLoad();
+  }catch(e){admMsg(e.message)}
+  btn.disabled=false;
+});
+document.addEventListener('click',async ev=>{
+  const b=ev.target.closest('[data-adm]'); if(!b||!window.__u8isAdmin()) return;
+  const act=b.dataset.adm, id=b.dataset.id, em=b.dataset.email;
+  try{
+    if(act==='del'){
+      if(!confirm('Supprimer le compte '+em+' ? Toutes ses données (joueurs, présences, notes) seront effacées. Action définitive.')) return;
+      b.disabled=true; await call({action:'delete',id}); lastCreds=null;
+    }else if(act==='reset'){
+      if(!confirm('Créer un nouveau mot de passe pour '+em+' ? L\'ancien ne marchera plus.')) return;
+      const pw=genPass(); b.disabled=true; await call({action:'reset',id,password:pw}); lastCreds={email:em,password:pw};
+    }
+    await admLoad();
+  }catch(e){b.disabled=false; alert(e.message)}
 });
 
 /* ---------- Démarrage ---------- */

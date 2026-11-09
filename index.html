@@ -516,6 +516,13 @@ details.acc .in img{display:block;width:100%;border-radius:14px;background:var(-
 .sumg .tag{min-width:52px;justify-content:center}
 .sumrem{white-space:pre-wrap}
 
+/* ===== Mon équipe ===== */
+.tb.wide{width:auto;min-width:58px;padding:0 12px}
+.tp.off .nm{opacity:.5}
+.tedu1{display:block}
+.tedu1 b{display:block;font:800 .74rem var(--f-body);letter-spacing:.06em;text-transform:uppercase;color:var(--club-ink);margin:0 2px 4px}
+.tedu1 .inp{width:100%}
+.ro{font-style:normal;font:700 .78rem var(--f-body);color:var(--muted)}
 /* ===== Fiche image ===== */
 .fiche{margin-top:14px}
 .fiche img{display:block;width:100%;height:auto;border-radius:18px;box-shadow:var(--shadow)}
@@ -1060,6 +1067,7 @@ function trendMini(t,vals){
 }
 function vJoueurs(){
   renderChrome('Joueurs');
+  setTimeout(()=>{try{syncClub()}catch(e){}},0);
   const L=sortedPlayers();
   let h=`<div class="stack"><div class="plist" style="margin:0"><input class="inp" id="newp" placeholder="Ajouter un prénom" autocomplete="off" aria-label="Nouveau prénom"><button class="btn" data-addname>Ajouter</button></div>`;
   if(L.length){
@@ -1115,8 +1123,8 @@ function vPlateau(id){
     const nm=av.items.filter(i=>i.titre&&!/^CONSIGNES$/i.test(i.titre)).map(i=>i.titre).join(' · ');
     h+=`</div><div class="sec"><h2>Avant le plateau</h2><button class="prow" data-go="seance:${av.id}"><span style="flex:1;min-width:0"><b style="display:block">${esc(wday(av.date))} ${dt(av.date).getDate()} ${esc(fmt(av.date,{month:'long'}))}</b><span class="muted" style="display:block;font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nm)}</span></span>${I.next}</button></div>`;
   } else h+='</div>';
-  loadShared();
-  h+=attSection(id)+teamSection(id)+matchSection(id);
+  loadShared(); syncClub();
+  h+=(players.length||isAdm()?attSection(id):'')+teamSection(id)+matchSection(id);
   h+=`<div class="sec"><div class="remark"><h2>${I.pen} Remarques</h2><p class="hint">Tes notes : résultats, absents, points positifs.</p><textarea class="ta grow" data-rem="${id}" placeholder="Écrire une remarque…">${esc(rem[id]||'')}</textarea><p class="saved">Enregistré automatiquement sur ce téléphone.</p></div></div>`;
   h+=summarySection(id);
   return h;
@@ -1134,8 +1142,11 @@ function platRows(bn){
   return `<div class="week"><h3>Pendant les vacances</h3>${L.map(platRow).join('')}</div>`;
 }
 
-/* ---------- Matchs du plateau : équipes, score, buts, passes décisives, compte-rendu ---------- */
-let mt=store.get('mt',{});   // mt[idPlateau]={done,list:[{id,team,opp,sf,sa,g:{joueur:n},a:{joueur:n}}],teams:[{id,name,edu,pl:[ids],pn:{id:nom}}],locked,cur,src,by}
+/* ---------- Matchs du plateau : chaque éducateur forme SON équipe, note SES matchs ----------
+   mt[idPlateau]={done,list:[{id,team,opp,sf,sa,g,a}],teams:[{id,name,edu,pl:[ids],pn:{id:nom}}],locked,by}
+   teams ne contient que l'équipe de l'éducateur connecté. Les équipes des autres sont lues (lecture seule).
+   mt.__club={done:false,list:[],club:[{id,name}]} : liste U8 de l'administrateur, partagée en lecture. */
+let mt=store.get('mt',{});
 let confirmM=null, confirmT=null;
 const sumOpen={};
 const saveMt=()=>store.set('mt',mt);
@@ -1144,12 +1155,14 @@ const edM=pid=>mt[pid]||(mt[pid]={done:false,list:[]});
 const TLET=['A','B','C','D'];
 const myEmail=()=>{try{return (window.__u8email&&window.__u8email())||''}catch(e){return ''}};
 const myUid=()=>{try{return (window.__u8uid&&window.__u8uid())||''}catch(e){return ''}};
+const isArr=Array.isArray;
+const isAdm=()=>!!(window.__u8isAdmin&&window.__u8isAdmin());
+const myName=()=>{const e=myEmail().split('@')[0]||''; return e?e.charAt(0).toUpperCase()+e.slice(1):''};
 const cntOf=(o,k)=>(o&&o[k])||0;
 const resOf=x=>x.sf>x.sa?'v':x.sf<x.sa?'d':'n';
 const RESL={v:'Victoire',n:'Match nul',d:'Défaite'};
-const isArr=Array.isArray;
 
-/* --- Données partagées : les plateaux des autres éducateurs (lecture seule) --- */
+/* --- Données partagées : plateaux des autres éducateurs (lecture seule) --- */
 const SH={rows:[],at:0,busy:false,stale:false};
 function loadShared(force){
   if(!window.__u8shared||SH.busy) return;
@@ -1164,58 +1177,71 @@ function loadShared(force){
 function refreshView(){
   if(!route.startsWith('plateau:')) return;
   const a=document.activeElement;
-  if(a&&/^(INPUT|TEXTAREA)$/.test(a.tagName)){SH.stale=true; return}   // ne pas couper la saisie
+  if(a&&/^(INPUT|TEXTAREA)$/.test(a.tagName)){SH.stale=true; return}
   keep();
 }
 document.addEventListener('focusout',()=>{ if(SH.stale){SH.stale=false; setTimeout(()=>{const a=document.activeElement; if(!(a&&/^(INPUT|TEXTAREA)$/.test(a.tagName))) refreshView()},150)} });
 setInterval(()=>{ if(route.startsWith('plateau:')&&document.visibilityState==='visible') loadShared() },30000);
 
-const okTeams=x=>x&&x.locked&&isArr(x.teams)&&x.teams.length;
-function orgOf(pid){                       // équipes formées par un autre éducateur pour ce plateau
-  const m=getM(pid); if(isArr(m.teams)&&m.teams.length) return null;
-  const rows=SH.rows.filter(r=>okTeams(r.value[pid]));
-  const r=rows.find(x=>x.owner===m.src)||rows[0];
-  return r?{owner:r.owner,m:r.value[pid]}:null;
+/* --- Liste U8 du club --- */
+function syncClub(){                        // l'administrateur publie sa liste de joueurs (prénoms seulement)
+  if(!isAdm()) return;
+  const c=players.map(p=>({id:p.id,name:String(p.name||'').trim()}));
+  const cur=mt.__club&&mt.__club.club;
+  if(JSON.stringify(cur||null)!==JSON.stringify(c)){ mt.__club={done:false,list:[],club:c}; saveMt(); }
 }
-function teamsOf(pid){
-  const m=getM(pid);
-  if(okTeams(m)) return {own:true,teams:m.teams};
-  const o=orgOf(pid); return o?{own:false,teams:o.m.teams,owner:o.owner,by:o.m.by||''}:null;
+function clubList(){
+  if(isAdm()||players.length&&!SH.rows.some(r=>r.value.__club)) return players.map(p=>({id:p.id,name:pname(p)}));
+  const r=SH.rows.find(r=>r.value.__club&&isArr(r.value.__club.club));
+  return r?r.value.__club.club.filter(p=>p&&p.id).map(p=>({id:String(p.id),name:String(p.name||'').trim()||'Sans prénom'})):players.map(p=>({id:p.id,name:pname(p)}));
 }
-const teamById=(T,id)=>T&&T.teams.find(t=>t.id===id);
-/* Équipes visibles : l'organisateur voit tout ; un éducateur qui suit ne voit que son équipe */
-function viewTeams(pid){const T=teamsOf(pid); if(!T) return null; if(T.own) return T.teams; const t=teamById(T,getM(pid).cur); return t?[t]:T.teams}
-/* Équipes du résumé : seulement l'équipe choisie par l'éducateur */
-function sumTeams(pid){const T=teamsOf(pid); if(!T) return null; const t=teamById(T,getM(pid).cur); return t?[t]:T.own?T.teams:[]}
-const itemsFor=(pid,ts)=>ts?allOf(pid).filter(o=>ts.some(t=>t.id===o.x.team)):allOf(pid);
-const tLabel=t=>t?(t.name||('Équipe '+t.id)):'';
 function NM(k){
   const p=players.find(x=>x.id===k); if(p) return pname(p);
   for(const pid in mt){const ts=mt[pid].teams; if(isArr(ts)) for(const t of ts) if(t&&t.pn&&t.pn[k]) return String(t.pn[k]);}
-  for(const r of SH.rows) for(const pid in r.value){const ts=r.value[pid]&&r.value[pid].teams; if(isArr(ts)) for(const t of ts) if(t&&t.pn&&t.pn[k]) return String(t.pn[k]);}
+  for(const r of SH.rows){
+    const c=r.value.__club; if(c&&isArr(c.club)){const q=c.club.find(z=>z&&z.id===k); if(q&&String(q.name||'').trim()) return String(q.name).trim();}
+    for(const pid in r.value){const ts=r.value[pid]&&r.value[pid].teams; if(isArr(ts)) for(const t of ts) if(t&&t.pn&&t.pn[k]) return String(t.pn[k]);}
+  }
   return '';
 }
 const pnOf=NM;
 function namesOf(o){
   return Object.keys(o||{}).filter(k=>o[k]>0&&NM(k)).sort((a,b)=>o[b]-o[a]||NM(a).localeCompare(NM(b),'fr')).map(k=>NM(k)+(o[k]>1?' ×'+o[k]:'')).join(', ');
 }
-/* Tous les matchs d'un plateau : les miens (modifiables) + ceux des autres éducateurs (lecture seule) */
-function othersOf(pid){
-  const out=[], me=myUid(), T=teamsOf(pid);
-  if(!T) return out;
-  SH.rows.forEach(r=>{
-    const v=r.value[pid]; if(!v||!isArr(v.list)) return;
-    const follows=T.own?(v.src===me):(r.owner===T.owner||v.src===T.owner);
-    if(!follows) return;
-    v.list.forEach(x=>{ if(x&&typeof x==='object') out.push({x:fixM(x),by:v.by||'un éducateur',ro:true}) });
-  });
-  return out;
+
+/* --- Équipes : la mienne (modifiable) + celles des autres (lecture seule) --- */
+function migrate(pid){                      // ancien modèle (plusieurs équipes chez un seul éducateur)
+  const m=mt[pid]; if(!m||!isArr(m.teams)||m.teams.length<2) return;
+  const pre=(myEmail().split('@')[0]||'').toLowerCase();
+  const keepT=m.teams.find(t=>pre&&String(t.edu||'').toLowerCase().includes(pre))||m.teams[0];
+  m.teams=[keepT]; m.list.forEach(x=>{if(x.team) x.team=keepT.id}); delete m.cur; delete m.src; saveMt();
 }
+function mineOf(pid){ migrate(pid); const m=getM(pid), t=isArr(m.teams)&&m.teams[0]; return t?Object.assign({},t,{k:'me:'+t.id,mine:true,owner:'me',by:myEmail()}):null }
+function otherTeams(pid){
+  const out=[];
+  SH.rows.forEach(r=>{const v=r.value[pid]; if(v&&v.locked&&isArr(v.teams)) v.teams.forEach(t=>{ if(t&&t.id) out.push(Object.assign({},t,{pl:isArr(t.pl)?t.pl:[],k:r.owner+':'+t.id,mine:false,owner:r.owner,by:v.by||''})) })});
+  return out.sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
+}
+function teamsOf(pid){
+  const me=mineOf(pid), m=getM(pid), o=otherTeams(pid);
+  const ts=(me&&m.locked?[me]:[]).concat(o).sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
+  return ts.length?{teams:ts,mine:me&&m.locked?me:null}:null;
+}
+const tLabel=t=>t?(t.name||('Équipe '+t.id)):'';
+const viewTeams=pid=>{const T=teamsOf(pid); return T?T.teams:null};
+function sumTeams(pid){const T=teamsOf(pid); if(!T) return null; return T.mine?[T.mine]:[]}
 function fixM(x){return {id:String(x.id||''),team:x.team,opp:String(x.opp||''),sf:Math.max(0,+x.sf||0),sa:Math.max(0,+x.sa||0),g:x.g&&typeof x.g==='object'?x.g:{},a:x.a&&typeof x.a==='object'?x.a:{}}}
-function allOf(pid){ return getM(pid).list.map(x=>({x,by:'',ro:false})).concat(othersOf(pid)) }
+function allOf(pid){
+  const me=getM(pid).list.map(x=>({x,k:x.team?'me:'+x.team:'',by:'',ro:false}));
+  const ot=[]; SH.rows.forEach(r=>{const v=r.value[pid]; if(v&&v.locked&&isArr(v.list)) v.list.forEach(x=>{ if(x&&typeof x==='object'&&x.team) ot.push({x:fixM(x),k:r.owner+':'+x.team,by:v.by||'un éducateur',ro:true}) })});
+  return me.concat(ot);
+}
+const itemsFor=(pid,ts)=>ts?allOf(pid).filter(o=>ts.some(t=>t.k===o.k)):allOf(pid);
+const groupsFor=(pid,ts)=>{const all=allOf(pid); return ts?ts.map(t=>({t,it:all.filter(o=>o.k===t.k)})):[{t:null,it:all}]};
 function mTotals(id){
   let g=0,a=0;
-  Object.keys(mt).forEach(k=>allOf(k).forEach(({x})=>{g+=cntOf(x.g,id);a+=cntOf(x.a,id)}));
+  Object.keys(mt).forEach(k=>{ if(k!=='__club') getM(k).list.forEach(x=>{g+=cntOf(x.g,id);a+=cntOf(x.a,id)}) });
+  SH.rows.forEach(r=>Object.keys(r.value).forEach(k=>{const v=r.value[k]; if(k!=='__club'&&v&&isArr(v.list)) v.list.forEach(x=>{if(x){g+=cntOf(x.g,id);a+=cntOf(x.a,id)}})}));
   return {g,a};
 }
 const anyMatch=()=>Object.keys(mt).some(k=>mt[k].list.length);
@@ -1241,10 +1267,9 @@ function statsOf(items){
 }
 const mStats=pid=>statsOf(allOf(pid));
 const vnd=S=>`${S.V} victoire${S.V>1?'s':''}, ${S.N} nul${S.N>1?'s':''}, ${S.D} défaite${S.D>1?'s':''}`;
-/* Tableau des buteurs et passeurs */
 function scorers(pid,ts){
   const T=teamsOf(pid), S=statsOf(itemsFor(pid,ts)), ids=new Set(Object.keys(S.G).concat(Object.keys(S.A)));
-  const teamOfP=k=>{if(!T) return ''; const t=T.teams.find(t=>isArr(t.pl)&&t.pl.includes(k)); return t?t.id:''};
+  const teamOfP=k=>{if(!T) return ''; const t=(ts||T.teams).find(t=>isArr(t.pl)&&t.pl.includes(k)); return t?t.id:''};
   return [...ids].filter(k=>NM(k)&&((S.G[k]||0)+(S.A[k]||0))>0).map(k=>({k,n:NM(k),t:teamOfP(k),g:S.G[k]||0,a:S.A[k]||0}))
     .sort((a,b)=>b.g-a.g||b.a-a.a||a.n.localeCompare(b.n,'fr'));
 }
@@ -1253,35 +1278,31 @@ function scorerTable(pid,ts){
   if(!R.length) return '<p class="muted" style="font-size:.92rem">Aucun but ni passe décisive noté.</p>';
   return `<table class="sct"><thead><tr><th>Joueur</th>${T?'<th>Éq.</th>':''}<th>⚽</th><th>🅰️</th></tr></thead><tbody>${R.map(r=>`<tr><td>${esc(r.n)}</td>${T?`<td>${esc(r.t)}</td>`:''}<td>${r.g}</td><td>${r.a}</td></tr>`).join('')}</tbody></table>`;
 }
-
-/* --- Équipes : former, fermer, suivre --- */
+const teamCard=(t,extra)=>`<div class="tlist${t.mine?' mine':''}"><b>${esc(tLabel(t))}${t.edu?` · ${esc(t.edu)}`:''}${t.mine?'':' <em class="ro">🔒 lecture seule</em>'}</b><span>${esc((t.pl||[]).map(NM).filter(Boolean).join(', ')||'Aucun joueur')}</span>${extra||''}</div>`;
 function teamSection(pid){
-  const m=getM(pid), o=orgOf(pid);
-  let h=`<div class="sec" id="equipes"><h2><span aria-hidden="true">👕</span> Équipes</h2>`;
-  if(o){                                    // équipes de l'organisateur : je choisis celle que je suis
-    h+=`<div class="card tcard"><p class="hint" style="margin-top:0">Équipes formées par ${esc(o.m.by||"l'organisateur")}. Touche l'équipe que tu encadres : tu noteras ses matchs.</p><div class="seg wrap tpick">${o.m.teams.map(t=>`<button class="chip${m.cur===t.id?' on':''}" data-tm="cur|${pid}|${t.id}">${esc(tLabel(t))}${t.edu?` · ${esc(t.edu)}`:''}</button>`).join('')}</div>`;
-    const mt0=o.m.teams.find(t=>t.id===m.cur);
-    if(mt0) return h.replace(/<p class="hint"[\s\S]*$/,'')+`<div class="tlist mine"><b>Mon équipe · ${esc(tLabel(mt0))}${mt0.edu?` · ${esc(mt0.edu)}`:''}</b><span>${esc((mt0.pl||[]).map(NM).filter(Boolean).join(', ')||'—')}</span></div><div class="row" style="margin-top:10px"><button class="chip" data-tm="cur|${pid}|">Changer d'équipe</button><button class="chip" data-tm="refresh|${pid}">↻ Actualiser</button></div></div></div>`;
-    return h+`<button class="chip" data-tm="refresh|${pid}" style="margin-top:10px">↻ Actualiser</button></div></div>`;
-  }
-  const ts=isArr(m.teams)?m.teams:[];
-  if(!ts.length){
-    if(!players.length) return '';
-    return h+`<div class="card tcard"><p class="hint" style="margin-top:0">Plusieurs équipes à ce plateau ? Forme-les ici : chaque éducateur notera les matchs de son équipe sur son téléphone.</p><button class="addp" data-tm="init|${pid}">${I.plus} Former les équipes A et B</button></div></div>`;
+  const m=getM(pid), me=mineOf(pid), O=otherTeams(pid), C=clubList();
+  let h=`<div class="sec" id="equipes"><h2><span aria-hidden="true">👕</span> Équipes</h2><div class="card tcard">`;
+  if(!me){
+    if(O.length) h+=O.map(t=>teamCard(t)).join('');
+    if(!C.length) return h+`<p class="hint" style="margin-top:${O.length?10:0}px">Pas encore de joueurs U8. ${isAdm()?'Ajoute-les dans « Joueurs ».':"Karim doit d'abord les ajouter."}</p>${O.length?`<button class="chip" data-tm="refresh|${pid}" style="margin-top:10px">↻ Actualiser</button>`:''}</div></div>`;
+    h+=`<p class="hint" style="margin-top:${O.length?12:0}px">Forme ton équipe : choisis ses joueurs dans la liste U8. Tu noteras ensuite ses matchs, et toi seul pourras la modifier.</p><button class="addp" data-tm="init|${pid}">${I.plus} Former mon équipe</button>`;
+    if(O.length) h+=`<button class="chip" data-tm="refresh|${pid}" style="margin-top:10px">↻ Actualiser</button>`;
+    return h+'</div></div>';
   }
   if(m.locked){
-    h+=`<div class="card tcard"><div class="note donebar" style="margin:0 0 10px"><span>${I.check} <b>Équipes fermées.</b> Les autres éducateurs les voient sur leur téléphone.</span></div>`;
-    h+=ts.map(t=>`<div class="tlist"><b>${esc(tLabel(t))}${t.edu?` · ${esc(t.edu)}`:''}</b><span>${esc((t.pl||[]).map(NM).filter(Boolean).join(', ')||'Aucun joueur')}</span></div>`).join('');
-    return h+`<button class="chip" data-tm="unlock|${pid}" style="margin-top:10px">Modifier les équipes</button></div></div>`;
+    h+=[me].concat(O).sort((a,b)=>a.id<b.id?-1:1).map(t=>teamCard(t)).join('');
+    return h+`<div class="row" style="margin-top:10px"><button class="chip" data-tm="unlock|${pid}">Modifier mon équipe</button><button class="chip" data-tm="refresh|${pid}">↻ Actualiser</button></div></div></div>`;
   }
-  const pres=sortedPlayers().filter(p=>attOf(pid,p.id)==='p'), L=pres.length?pres:sortedPlayers();
-  const where=k=>{const t=ts.find(t=>(t.pl||[]).includes(k)); return t?t.id:''};
-  h+=`<div class="card tcard"><p class="hint" style="margin-top:0">${pres.length?'Joueurs présents':'Tous les joueurs (marque la présence pour ne voir que les présents)'} : touche la lettre de son équipe.</p>`;
-  h+=`<div class="tedus">${ts.map(t=>`<label><b>${esc(tLabel(t))} · ${(t.pl||[]).length}</b><input class="inp" data-tedu="${pid}|${t.id}" value="${esc(t.edu||'')}" placeholder="Éducateur (facultatif)" autocomplete="off"></label>`).join('')}</div>`;
-  h+=L.map(p=>{const w=where(p.id); return `<div class="tp"><span class="nm">${esc(pname(p))}</span><span class="tbtns">${ts.map(t=>`<button class="tb${w===t.id?' on':''}" data-tm="set|${pid}|${t.id}|${p.id}" aria-pressed="${w===t.id}" aria-label="${esc(pname(p))} dans ${esc(tLabel(t))}">${t.id}</button>`).join('')}</span></div>`}).join('');
-  const nOk=ts.some(t=>(t.pl||[]).length);
-  h+=`<div class="row" style="margin-top:12px">${ts.length<TLET.length?`<button class="chip" data-tm="addt|${pid}">${I.plus.replace('<svg','<svg style="width:14px;height:14px"')} Équipe ${TLET[ts.length]}</button>`:''}${ts.length>2?`<button class="chip" data-tm="delt|${pid}">Retirer l'équipe ${ts[ts.length-1].id}</button>`:''}${confirmT===pid?`<button class="btn danger mini" data-tm="clear|${pid}">Supprimer les équipes ?</button>`:`<button class="chip" data-tm="clear|${pid}">Supprimer les équipes</button>`}</div>`;
-  h+=`<button class="btn fin" data-tm="lock|${pid}"${nOk?'':' disabled'}>${I.check} Fermer les équipes</button>`;
+  // Composition de mon équipe
+  const usedL=O.map(t=>t.id), taken={}; O.forEach(t=>(t.pl||[]).forEach(k=>taken[k]=tLabel(t)));
+  const t0=m.teams[0], pres=C.filter(p=>attOf(pid,p.id)==='p'), L=(pres.length?pres:C).slice().sort((a,b)=>a.name.localeCompare(b.name,'fr'));
+  if(O.length) h+=O.map(t=>teamCard(t)).join('')+'<div style="height:10px"></div>';
+  h+=`<p class="hint" style="margin-top:0"><b>Mon équipe</b> · choisis sa lettre, puis touche les joueurs.</p><div class="seg wrap tpick" style="margin:6px 0 10px">${TLET.map(L1=>usedL.includes(L1)&&L1!==t0.id?'':`<button class="chip${t0.id===L1?' on':''}" data-tm="let|${pid}|${L1}">Équipe ${L1}</button>`).join('')}</div>`;
+  h+=`<label class="tedu1"><b>Éducateur</b><input class="inp" data-tedu="${pid}|${t0.id}" value="${esc(t0.edu||'')}" placeholder="Ton prénom" autocomplete="off"></label>`;
+  h+=`<p class="muted" style="font-size:.88rem;margin:8px 2px 4px">${(t0.pl||[]).length} joueur${(t0.pl||[]).length>1?'s':''} choisi${(t0.pl||[]).length>1?'s':''}${pres.length?' · joueurs présents seulement':''}</p>`;
+  h+=L.map(p=>{const on=(t0.pl||[]).includes(p.id), tk=taken[p.id]; return `<div class="tp${tk?' off':''}"><span class="nm">${esc(p.name)}</span>${tk?`<span class="muted" style="font-size:.85rem;font-weight:700">${esc(tk)}</span>`:`<button class="tb wide${on?' on':''}" data-tm="tog|${pid}|${p.id}" aria-pressed="${on}">${on?'✓ '+esc(t0.id):'+'}</button>`}</div>`}).join('');
+  h+=`<div class="row" style="margin-top:12px">${confirmT===pid?`<button class="btn danger mini" data-tm="clear|${pid}">Supprimer mon équipe ?</button>`:`<button class="chip" data-tm="clear|${pid}">Supprimer mon équipe</button>`}<button class="chip" data-tm="refresh|${pid}">↻ Actualiser</button></div>`;
+  h+=`<button class="btn fin" data-tm="lock|${pid}"${(t0.pl||[]).length?'':' disabled'}>${I.check} Fermer mon équipe</button>`;
   return h+'</div></div>';
 }
 
@@ -1294,7 +1315,7 @@ function mcardEdit(pid,x,i,t){
   h+=`<input class="inp" data-mopp="${pid}|${x.id}" value="${esc(x.opp||'')}" placeholder="Adversaire (facultatif)" autocomplete="off" aria-label="Adversaire du match ${i}">`;
   h+=`<div class="scoreb"><div class="side"><small>${t?esc(tLabel(t)):'Nous'}</small>${stp('sf',pid,x.id,'',x.sf,1,'','Score de notre équipe')}</div><b class="dash">–</b><div class="side"><small>Eux</small>${stp('sa',pid,x.id,'',x.sa,1,'','Score adverse')}</div></div>`;
   if(rows.length) h+=`<div class="mleg"><span>⚽ But</span><span>🅰️ Passe décisive</span></div>`+rows.map(k=>`<div class="mp"><span class="nm">${esc(NM(k))}</span>${stp('g',pid,x.id,k,cntOf(x.g,k),0,'⚽','Buts de '+NM(k))}${stp('a',pid,x.id,k,cntOf(x.a,k),0,'🅰️','Passes décisives de '+NM(k))}</div>`).join('');
-  else h+=`<p class="muted" style="font-size:.9rem;margin-top:4px">${t?"Cette équipe n'a pas encore de joueurs.":"Marque d'abord les joueurs présents dans « Présence » ci-dessus pour noter leurs buts et leurs passes décisives."}</p>`;
+  else h+=`<p class="muted" style="font-size:.9rem;margin-top:4px">${t?"Ton équipe n'a pas encore de joueurs.":"Marque d'abord les joueurs présents dans « Présence » ci-dessus pour noter leurs buts et leurs passes décisives."}</p>`;
   return h+'</div>';
 }
 function mcardRead(x,i,by,t){
@@ -1302,56 +1323,51 @@ function mcardRead(x,i,by,t){
   return `<div class="mcard rep ro"><div class="mhd"><b>Match ${i}${x.opp&&x.opp.trim()?` · ${esc(x.opp.trim())}`:''}</b><span class="tag ${r}">${RESL[r]}</span></div><div class="bigscore"><span>${t?esc(tLabel(t)):'Nous'}</span><b>${x.sf}</b><i>–</i><b>${x.sa}</b><span>Eux</span></div>${bt?`<p><b>⚽ Buteurs.</b> ${esc(bt)}</p>`:''}${ps?`<p><b>🅰️ Passes décisives.</b> ${esc(ps)}</p>`:''}${by?`<p class="by">Noté par ${esc(by)}</p>`:''}</div>`;
 }
 function matchSection(pid){
-  const m=getM(pid), T=teamsOf(pid);
+  const m=getM(pid), T=teamsOf(pid), me=mineOf(pid);
   let h=`<div class="sec" id="matchs"><h2><span aria-hidden="true">⚽</span> Matchs</h2>`;
   if(m.done) return h+matchReport(pid)+'</div>';
-  if(!T&&isArr(m.teams)&&m.teams.length) return h+`<div class="empty" style="padding:4px 6px 8px"><b>Ferme d'abord les équipes</b>Ensuite, chaque éducateur note les matchs de son équipe.</div></div>`;
-  if(!T){                                   // plateau sans équipes : comme avant
+  if(!T&&!me){                              // plateau sans équipes : comme avant
+    if(!players.length) return h+`<div class="empty" style="padding:4px 6px 8px"><b>Forme d'abord ton équipe</b>Ensuite, tu noteras ses matchs ici.</div></div>`;
     if(!m.list.length) h+=`<div class="empty" style="padding:4px 6px 8px"><b>Aucun match noté</b>Ajoute un match pour noter le score, les buts et les passes décisives.</div>`;
     m.list.forEach((x,i)=>{h+=mcardEdit(pid,x,i+1,null)});
     h+=`<button class="addp" data-mt="addm|${pid}">${I.plus} Ajouter un match</button>`;
   }else{
-    if(!T.teams.some(t=>t.id===m.cur)) h+=`<div class="note"><span><b>Choisis ton équipe.</b> Touche ci-dessous l'équipe dont tu notes les matchs.</span></div>`;
-    const VT=viewTeams(pid);
-    h+=`<div class="seg wrap tpick" style="margin-bottom:10px">${VT.map(t=>`<button class="chip${m.cur===t.id?' on':''}" data-tm="cur|${pid}|${t.id}">Je note : ${esc(tLabel(t))}</button>`).join('')}</div>`;
+    if(me&&!m.locked) h+=`<div class="note"><span><b>Ferme ton équipe</b> pour noter ses matchs.</span></div>`;
     const all=allOf(pid);
-    VT.forEach(t=>{
-      const it=all.filter(o=>o.x.team===t.id);
-      h+=`<div class="tblock${m.cur===t.id?' mine':''}"><h3>${esc(tLabel(t))}${t.edu?` <span>· ${esc(t.edu)}</span>`:''}</h3>`;
+    (T?T.teams:[]).forEach(t=>{
+      const it=all.filter(o=>o.k===t.k);
+      h+=`<div class="tblock${t.mine?' mine':''}"><h3>${esc(tLabel(t))}${t.edu?` <span>· ${esc(t.edu)}</span>`:''}${t.mine?'':' <span class="ro">🔒</span>'}</h3>`;
       if(!it.length) h+=`<p class="muted" style="font-size:.9rem;margin:0 2px 10px">Aucun match noté pour l'instant.</p>`;
       it.forEach((o,i)=>{h+=o.ro?mcardRead(o.x,i+1,o.by,t):mcardEdit(pid,o.x,i+1,t)});
-      if(m.cur===t.id) h+=`<button class="addp" data-mt="addm|${pid}|${t.id}">${I.plus} Ajouter un match · ${esc(tLabel(t))}</button>`;
+      if(t.mine) h+=`<button class="addp" data-mt="addm|${pid}|${t.id}">${I.plus} Ajouter un match · ${esc(tLabel(t))}</button>`;
       h+='</div>';
     });
-    h+=`<button class="chip" data-tm="refresh|${pid}" style="margin-top:4px">↻ Actualiser les matchs des autres éducateurs</button>`;
+    if(T&&T.teams.some(t=>!t.mine)) h+=`<button class="chip" data-tm="refresh|${pid}" style="margin-top:4px">↻ Actualiser les matchs des autres éducateurs</button>`;
   }
-  if(allOf(pid).length) h+=`<button class="btn fin" data-mt="done|${pid}">${I.check} Terminer le plateau</button><p class="saved" style="text-align:center">Le compte-rendu match par match s'affiche une fois le plateau terminé.</p>`;
+  if(m.list.length) h+=`<button class="btn fin" data-mt="done|${pid}">${I.check} Terminer le plateau</button><p class="saved" style="text-align:center">Le compte-rendu match par match s'affiche une fois le plateau terminé.</p>`;
   return h+'</div>';
 }
 function presCount(pid,ts){
-  const T=ts||(teamsOf(pid)?teamsOf(pid).teams:null);
-  if(T) return T.reduce((n,t)=>n+(t.pl||[]).length,0);
+  if(ts) return ts.reduce((n,t)=>n+(t.pl||[]).length,0);
+  const T=teamsOf(pid); if(T) return T.teams.reduce((n,t)=>n+(t.pl||[]).length,0);
   return sortedPlayers().filter(p=>attOf(pid,p.id)==='p').length;
 }
 function matchReport(pid){
-  const T=teamsOf(pid), VT=viewTeams(pid), all=allOf(pid), S=statsOf(itemsFor(pid,VT));
+  const T=teamsOf(pid), VT=viewTeams(pid), S=statsOf(itemsFor(pid,VT));
   let h=`<div class="note donebar"><span>${I.check} <b>Plateau terminé.</b> Voici le compte-rendu, match après match.</span></div>`;
-  const groups=T?VT.map(t=>({t,it:all.filter(o=>o.x.team===t.id)})):[{t:null,it:all}];
-  groups.forEach(gp=>{
+  groupsFor(pid,VT).forEach(gp=>{
     if(T){const s=statsOf(gp.it); h+=`<h3 class="rh">${esc(tLabel(gp.t))}${gp.t.edu?` <span>· ${esc(gp.t.edu)}</span>`:''}<em>${s.V}-${s.N}-${s.D}</em></h3>`;}
     if(!gp.it.length) h+=`<p class="muted" style="font-size:.9rem;margin:0 2px 10px">Aucun match noté.</p>`;
     gp.it.forEach((o,i)=>{h+=mcardRead(o.x,i+1,o.ro?o.by:'',gp.t)});
   });
-  const pres=presCount(pid,VT);
-  h+=`<div class="card"><h3 style="font:600 1.1rem var(--f-display);margin-bottom:10px">Bilan du plateau</h3><div class="kpis k4"><div><b>${S.n}</b><span>matchs</span></div><div><b>${S.V}-${S.N}-${S.D}</b><span>V-N-D</span></div><div><b>${S.bf}-${S.ba}</b><span>buts</span></div><div><b>${pres}</b><span>joueurs</span></div></div><h3 style="font:600 1.05rem var(--f-display);margin:14px 0 6px">Buteurs et passeurs</h3>${scorerTable(pid,VT)}</div>`;
+  h+=`<div class="card"><h3 style="font:600 1.1rem var(--f-display);margin-bottom:10px">Bilan du plateau</h3><div class="kpis k4"><div><b>${S.n}</b><span>matchs</span></div><div><b>${S.V}-${S.N}-${S.D}</b><span>V-N-D</span></div><div><b>${S.bf}-${S.ba}</b><span>buts</span></div><div><b>${presCount(pid,VT)}</b><span>joueurs</span></div></div><h3 style="font:600 1.05rem var(--f-display);margin:14px 0 6px">Buteurs et passeurs</h3>${scorerTable(pid,VT)}</div>`;
   h+=`<div class="row" style="margin-top:12px"><button class="btn" data-mt="copy|${pid}">${I.copy||''} Copier ${T&&sumTeams(pid).length===1?'le résumé de mon équipe':'le compte-rendu'}</button><button class="chip" data-mt="reopen|${pid}">Rouvrir pour modifier</button></div><div id="mtout"></div>`;
   return h;
 }
 function reportText(pid){
-  const s=PLID[pid], T=teamsOf(pid), ST=sumTeams(pid), all=allOf(pid), S=statsOf(itemsFor(pid,ST));
+  const s=PLID[pid], T=teamsOf(pid), ST=sumTeams(pid), S=statsOf(itemsFor(pid,ST));
   const T0=[`Résumé du plateau · ${s.titre}${ST&&ST.length===1?' · '+tLabel(ST[0]):''}`,`FC Marmande 47 · U8 · ${longDate(s.date)} ${dt(s.date).getFullYear()}`,`Joueurs : ${presCount(pid,ST)}`,''];
-  const groups=T?ST.map(t=>({t,it:all.filter(o=>o.x.team===t.id)})):[{t:null,it:all}];
-  groups.forEach(gp=>{
+  groupsFor(pid,ST).forEach(gp=>{
     if(T){const st=statsOf(gp.it); T0.push(`${tLabel(gp.t).toUpperCase()}${gp.t.edu?' ('+gp.t.edu+')':''} · ${vnd(st)}`);
       const nm=(gp.t.pl||[]).map(NM).filter(Boolean); if(nm.length) T0.push('Joueurs : '+nm.join(', '));}
     if(!gp.it.length) T0.push('Aucun match noté.');
@@ -1371,11 +1387,10 @@ function summarySection(pid){
   if(!allOf(pid).length&&!(rem[pid]||'').trim()) return '';
   let h=`<div class="sec" id="resume"><button class="btn alt sumbtn" data-mt="sum|${pid}">📋 ${sumOpen[pid]?'Masquer le résumé':'Résumé du plateau'}</button>`;
   if(sumOpen[pid]){
-    const T=teamsOf(pid), ST=sumTeams(pid), all=allOf(pid), S=statsOf(itemsFor(pid,ST));
+    const T=teamsOf(pid), ST=sumTeams(pid), S=statsOf(itemsFor(pid,ST));
     h+=`<div class="card sumcard"><h3>Résumé · ${esc(PLID[pid].titre)}${ST&&ST.length===1?' · '+esc(tLabel(ST[0])):''}</h3>`;
-    if(T&&!ST.length) h+=`<p class="muted">Choisis d'abord ton équipe dans « Équipes ».</p>`;
-    const groups=T?ST.map(t=>({t,it:all.filter(o=>o.x.team===t.id)})):[{t:null,it:all}];
-    h+=groups.map(gp=>{const st=statsOf(gp.it);
+    if(T&&!ST.length) h+=`<p class="muted">Forme et ferme d'abord ton équipe dans « Équipes ».</p>`;
+    h+=groupsFor(pid,ST).map(gp=>{const st=statsOf(gp.it);
       return `<div class="sumg">${T?`<b>${esc(tLabel(gp.t))}${gp.t.edu?` · ${esc(gp.t.edu)}`:''}</b>`:''}${gp.it.length?`<ul>${gp.it.map(({x},i)=>`<li><span class="tag ${resOf(x)}">${x.sf}-${x.sa}</span> Match ${i+1}${x.opp&&x.opp.trim()?' · '+esc(x.opp.trim()):''}</li>`).join('')}</ul><p class="muted">${vnd(st)}</p>`:'<p class="muted">Aucun match noté.</p>'}</div>`}).join('');
     h+=`<h4>Buteurs et passeurs</h4>${scorerTable(pid,ST)}`;
     if((rem[pid]||'').trim()) h+=`<h4>Remarque</h4><p class="sumrem">${esc(rem[pid].trim())}</p>`;
@@ -1388,17 +1403,16 @@ function summarySection(pid){
 document.addEventListener('click',ev=>{
   const t=ev.target.closest('[data-tm]'); if(!t) { if(confirmT){confirmT=null; if(route.startsWith('plateau:')) keep();} return; }
   ev.preventDefault();
-  const [act,P,X,Y]=t.dataset.tm.split('|'), m=edM(P);
+  const [act,P,X]=t.dataset.tm.split('|');
   if(act!=='clear') confirmT=null;
   if(act==='refresh'){ loadShared(true); return }
-  if(act==='init'){ m.teams=[{id:'A',name:'Équipe A',edu:'',pl:[]},{id:'B',name:'Équipe B',edu:'',pl:[]}]; m.locked=false; }
-  else if(act==='addt'){ const n=(m.teams||[]).length; if(n<TLET.length) m.teams.push({id:TLET[n],name:'Équipe '+TLET[n],edu:'',pl:[]}); }
-  else if(act==='delt'){ if((m.teams||[]).length>2){const g=m.teams.pop(); m.list.forEach(x=>{if(x.team===g.id) delete x.team})} }
+  const m=edM(P);
+  if(act==='init'){ const used=otherTeams(P).map(z=>z.id), L1=TLET.find(l=>!used.includes(l))||'A'; m.teams=[{id:L1,name:'Équipe '+L1,edu:myName(),pl:[]}]; m.locked=false; }
+  else if(act==='let'){ const z=m.teams&&m.teams[0]; if(z&&!otherTeams(P).some(o=>o.id===X)){ m.list.forEach(x=>{if(x.team===z.id) x.team=X}); z.id=X; z.name='Équipe '+X; } }
+  else if(act==='tog'){ const z=m.teams&&m.teams[0]; if(z){ const taken=otherTeams(P).some(o=>(o.pl||[]).includes(X)); if((z.pl||[]).includes(X)) z.pl=z.pl.filter(k=>k!==X); else if(!taken) z.pl=(z.pl||[]).concat(X); } }
   else if(act==='clear'){ if(confirmT===P){ delete m.teams; delete m.locked; m.list.forEach(x=>delete x.team); confirmT=null } else { confirmT=P; keep(); return } }
-  else if(act==='set'){ const ts=m.teams||[]; const was=ts.find(z=>(z.pl||[]).includes(Y)); ts.forEach(z=>{z.pl=(z.pl||[]).filter(k=>k!==Y)}); if(!was||was.id!==X){const z=ts.find(z=>z.id===X); if(z) z.pl.push(Y)} }
-  else if(act==='lock'){ (m.teams||[]).forEach(z=>{z.pn={}; (z.pl||[]).forEach(k=>{const n=NM(k); if(n) z.pn[k]=n})}); m.locked=true; m.by=myEmail(); if(!m.cur) m.cur=m.teams[0].id; }
+  else if(act==='lock'){ const z=m.teams&&m.teams[0]; if(!z) return; z.pn={}; (z.pl||[]).forEach(k=>{const n=NM(k)||((clubList().find(p=>p.id===k)||{}).name); if(n) z.pn[k]=n}); m.locked=true; m.by=myEmail(); }
   else if(act==='unlock'){ m.locked=false; }
-  else if(act==='cur'){ m.cur=X; m.by=myEmail(); const o=orgOf(P); if(o) m.src=o.owner; }
   saveMt(); keep();
 });
 document.addEventListener('click',ev=>{
@@ -1412,9 +1426,9 @@ document.addEventListener('click',ev=>{
   if(act==='sum'){ sumOpen[P]=!sumOpen[P]; keep(); if(sumOpen[P]){const e=document.getElementById('resume'); if(e) e.scrollIntoView({block:'start',behavior:'smooth'})} return }
   const m=edM(P);
   if(act==='addm'){
-    const x={id:newId(),opp:'',sf:0,sa:0,g:{},a:{}}; if(M) x.team=M;
-    m.by=myEmail(); const o=orgOf(P); if(o) m.src=o.owner;
-    m.list.push(x);
+    const x={id:newId(),opp:'',sf:0,sa:0,g:{},a:{}};
+    if(M){ const z=m.teams&&m.teams[0]; if(!z||z.id!==M||!m.locked) return; x.team=M; }
+    m.by=myEmail(); m.list.push(x);
   }
   else if(act==='delm'){ if(confirmM===M){m.list=m.list.filter(x=>x.id!==M); confirmM=null;} else {confirmM=M; keep(); return;} }
   else if(act==='done') m.done=true;
@@ -1461,7 +1475,7 @@ function wrapLines(c,t,max){
 }
 async function ficheBlob(pid){
   const s=PLID[pid], T=teamsOf(pid), ST=sumTeams(pid), all=allOf(pid);
-  const groups=T?ST.map(t=>({t,it:all.filter(o=>o.x.team===t.id)})):[{t:null,it:all}];
+  const groups=groupsFor(pid,ST);
   const S=statsOf(itemsFor(pid,ST)), R=scorers(pid,ST), remark=(rem[pid]||'').trim();
   const one=ST&&ST.length===1?ST[0]:null;
   const title=`${s.titre}${one?' · '+tLabel(one):''}`;
@@ -1589,7 +1603,6 @@ document.addEventListener('click',ev=>{
 
 /* ---------- Données des éducateurs : lecture seule, réservé à l'administrateur ---------- */
 const EDU={rows:null,emails:{},at:0,busy:false,err:''};
-const isAdm=()=>!!(window.__u8isAdmin&&window.__u8isAdmin());
 const onEdu=()=>route==='edus'||route.startsWith('edu:');
 function loadEdus(force){
   if(!window.__u8others||EDU.busy||(!force&&EDU.rows&&Date.now()-EDU.at<60000)) return;

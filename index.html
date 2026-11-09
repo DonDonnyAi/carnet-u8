@@ -930,7 +930,7 @@ function vOutils(){
   ${(window.__u8isAdmin&&window.__u8isAdmin())?`<div class="sec" style="margin-top:6px"><h2>Administration</h2><button class="tool cat-placement" data-go="admin"><span class="ic">${I.user}</span><span><b>Comptes éducateurs</b><span class="s">Créer, voir et supprimer les accès</span></span></button><button class="tool cat-match" data-go="edus"><span class="ic">${I.eye}</span><span><b>Données des éducateurs</b><span class="s">Voir tout ce qu'ils notent (lecture seule)</span></span></button></div>`:''}
   <div class="sec" style="margin-top:6px"><h2>Compte</h2>
   <button class="tool cat-duel" data-logout><span class="ic">${I.user}</span><span><b>Se déconnecter</b><span class="s">${esc(window.__u8email?window.__u8email():'')} · efface les données de cet appareil (elles restent dans ton compte)</span></span></button></div>
-  </div><button class="chip theme-toggle" data-theme-toggle>Changer le thème clair / sombre</button><p class="saved" style="text-align:center;margin-top:10px">Version de l'app : 9 nov. · 4 (liste U8 partagée)</p>`;
+  </div><button class="chip theme-toggle" data-theme-toggle>Changer le thème clair / sombre</button><p class="saved" style="text-align:center;margin-top:10px">Version de l'app : 9 nov. · 5 (plateau verrouillé)</p>`;
 }
 const TESTS=[
  ['Vitesse','secondes','15 m. Départ debout, un pied sur la ligne. Chrono lancé au « top », arrêté quand le torse passe la ligne d\'arrivée.'],
@@ -1129,7 +1129,8 @@ function vPlateau(id){
   } else h+='</div>';
   loadShared(); syncClub();
   h+=(players.length||isAdm()?attSection(id):'')+teamSection(id)+matchSection(id);
-  h+=`<div class="sec"><div class="remark"><h2>${I.pen} Remarques</h2><p class="hint">Tes notes : résultats, absents, points positifs.</p><textarea class="ta grow" data-rem="${id}" placeholder="Écrire une remarque…">${esc(rem[id]||'')}</textarea><p class="saved">Enregistré automatiquement sur ce téléphone.</p></div></div>`;
+  if(noOwnTeam(id)) h+=`<div class="sec"><div class="remark"><h2>${I.pen} Remarques</h2><div class="note" style="margin:0"><span>🔒 <b>Bloqué.</b> Les équipes de ce plateau appartiennent à un autre éducateur. Forme et ferme <b>ton</b> équipe pour écrire tes remarques et terminer le plateau.</span></div></div></div>`;
+  else h+=`<div class="sec"><div class="remark"><h2>${I.pen} Remarques</h2><p class="hint">Tes notes : résultats, absents, points positifs.</p><textarea class="ta grow" data-rem="${id}" placeholder="Écrire une remarque…">${esc(rem[id]||'')}</textarea><p class="saved">Enregistré automatiquement sur ce téléphone.</p></div></div>`;
   h+=summarySection(id);
   return h;
 }
@@ -1249,6 +1250,10 @@ function teamsOf(pid){
   return ts.length?{teams:ts,mine:me&&m.locked?me:null}:null;
 }
 const tLabel=t=>t?(t.name||('Équipe '+t.id)):'';
+/* Plateau avec les équipes d'autres éducateurs, mais pas d'équipe fermée à moi : rien à modifier */
+function noOwnTeam(pid){ const m=getM(pid), me=mineOf(pid); return !isAdm()&&otherTeams(pid).length>0&&!(me&&m.locked) }
+/* Mes matchs valides : ceux de mon équipe fermée (ou tous, sur un plateau sans équipes) */
+function ownItems(pid){ const m=getM(pid), me=mineOf(pid); if(me) return m.locked?m.list.filter(x=>x.team===me.id):[]; return otherTeams(pid).length?[]:m.list }
 const viewTeams=pid=>{const T=teamsOf(pid); return T?T.teams:null};
 function sumTeams(pid){const T=teamsOf(pid); if(!T) return null; return T.mine?[T.mine]:[]}
 function fixM(x){return {id:String(x.id||''),team:x.team,opp:String(x.opp||''),sf:Math.max(0,+x.sf||0),sa:Math.max(0,+x.sa||0),g:x.g&&typeof x.g==='object'?x.g:{},a:x.a&&typeof x.a==='object'?x.a:{}}}
@@ -1346,7 +1351,7 @@ function mcardRead(x,i,by,t){
 function matchSection(pid){
   const m=getM(pid), T=teamsOf(pid), me=mineOf(pid);
   let h=`<div class="sec" id="matchs"><h2><span aria-hidden="true">⚽</span> Matchs</h2>`;
-  if(m.done) return h+matchReport(pid)+'</div>';
+  if(m.done&&!noOwnTeam(pid)) return h+matchReport(pid)+'</div>';
   if(!T&&!me){                              // plateau sans équipes : comme avant
     if(!players.length) return h+`<div class="empty" style="padding:4px 6px 8px"><b>Forme d'abord ton équipe</b>Ensuite, tu noteras ses matchs ici.</div></div>`;
     if(!m.list.length) h+=`<div class="empty" style="padding:4px 6px 8px"><b>Aucun match noté</b>Ajoute un match pour noter le score, les buts et les passes décisives.</div>`;
@@ -1365,7 +1370,7 @@ function matchSection(pid){
     });
     if(T&&T.teams.some(t=>!t.mine)) h+=`<button class="chip" data-tm="refresh|${pid}" style="margin-top:4px">↻ Actualiser les matchs des autres éducateurs</button>`;
   }
-  if(m.list.length) h+=`<button class="btn fin" data-mt="done|${pid}">${I.check} Terminer le plateau</button><p class="saved" style="text-align:center">Le compte-rendu match par match s'affiche une fois le plateau terminé.</p>`;
+  if(ownItems(pid).length&&!noOwnTeam(pid)) h+=`<button class="btn fin" data-mt="done|${pid}">${I.check} Terminer le plateau</button><p class="saved" style="text-align:center">Le compte-rendu match par match s'affiche une fois le plateau terminé.</p>`;
   return h+'</div>';
 }
 function presCount(pid,ts){
@@ -1444,6 +1449,7 @@ document.addEventListener('click',ev=>{
   if(!t) return;
   ev.preventDefault();
   const [act,P,M,X,d]=parts;
+  if(act==='addm'&&noOwnTeam(P)) return;
   if(act==='sum'){ sumOpen[P]=!sumOpen[P]; keep(); if(sumOpen[P]){const e=document.getElementById('resume'); if(e) e.scrollIntoView({block:'start',behavior:'smooth'})} return }
   const m=edM(P);
   if(act==='addm'){
@@ -1452,8 +1458,8 @@ document.addEventListener('click',ev=>{
     m.by=myEmail(); m.list.push(x);
   }
   else if(act==='delm'){ if(confirmM===M){m.list=m.list.filter(x=>x.id!==M); confirmM=null;} else {confirmM=M; keep(); return;} }
-  else if(act==='done') m.done=true;
-  else if(act==='reopen') m.done=false;
+  else if(act==='done'){ if(noOwnTeam(P)||!ownItems(P).length) return; m.done=true; }
+  else if(act==='reopen'){ if(noOwnTeam(P)) return; m.done=false; }
   else if(act==='copy'){
     const txt=reportText(P), old=t.innerHTML;
     copyText(txt).then(ok=>{

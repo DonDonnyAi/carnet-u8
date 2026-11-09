@@ -2217,7 +2217,8 @@ async function call(body){
   const r=await sb.functions.invoke('admin-users',{body});
   if(r.error){
     let m='';
-    try{const j=await r.error.context.json(); m=j&&j.error||''}catch(e){}
+    let st=0; try{st=r.error.context.status||0; const j=await r.error.context.json(); m=j&&(j.error||j.msg||j.message)||''}catch(e){}
+    if(/invalid jwt|jwt/i.test(m)||st===401&&!/session|connect/i.test(m)) m="La fonction admin-users refuse la connexion (vérification JWT). Dans Supabase : Edge Functions → admin-users → désactive « Verify JWT », puis réessaie."; else if(m&&st) m+=' (code '+st+')';
     if(!m&&isNet(r.error)) m='Pas de réseau. Réessaie.';
     throw new Error(m||"Le service d'administration ne répond pas. Il n'est peut-être pas encore installé.");
   }

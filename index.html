@@ -516,6 +516,10 @@ details.acc .in img{display:block;width:100%;border-radius:14px;background:var(-
 .sumg .tag{min-width:52px;justify-content:center}
 .sumrem{white-space:pre-wrap}
 
+/* ===== Fiche image ===== */
+.fiche{margin-top:14px}
+.fiche img{display:block;width:100%;height:auto;border-radius:18px;box-shadow:var(--shadow)}
+a.btn{text-decoration:none}
 /* ===== Données des éducateurs ===== */
 .edl{padding:6px 14px}
 .edr{padding:9px 0;border-top:1px solid var(--line)}
@@ -1368,7 +1372,7 @@ function summarySection(pid){
     h+=`<h4>Buteurs et passeurs</h4>${scorerTable(pid,ST)}`;
     if((rem[pid]||'').trim()) h+=`<h4>Remarque</h4><p class="sumrem">${esc(rem[pid].trim())}</p>`;
     h+=`<p class="muted" style="margin-top:8px">Bilan : ${vnd(S)} · ${S.bf} marqué${S.bf>1?'s':''}, ${S.ba} encaissé${S.ba>1?'s':''}.</p>`;
-    h+=`<button class="btn" data-mt="copy|${pid}" style="margin-top:12px">${I.copy||''} Copier le résumé</button><div id="mtout"></div></div>`;
+    h+=ficheBlock(pid)+`<button class="chip" data-mt="copy|${pid}" style="margin-top:12px">${I.copy||''} Copier le résumé en texte</button><div id="mtout"></div></div>`;
   }
   return h+'</div>';
 }
@@ -1436,6 +1440,144 @@ document.addEventListener('input',ev=>{
     if(z){z.edu=t.value.slice(0,40); saveMt();}
   }
 });
+
+/* ---------- Fiche image du résumé (à partager au groupe des parents) ---------- */
+const sumImg={};                            // sumImg[pid]={url,file,sig}
+const FC={club:'#1f4fd1',ink:'#0d1b4c',muted:'#56668f',soft:'#eef3ff',line:'#d9e3fb',gold:'#f5b800',goldInk:'#120d00',light:'#8a96b8',remBg:'#fff8e0',
+  res:{v:['#1f9d55','rgba(31,157,85,.16)','Victoire'],n:['#8a96b8','rgba(138,150,184,.18)','Nul'],d:['#e05a33','rgba(224,90,51,.16)','Défaite']}};
+function rrect(c,x,y,w,h,r){r=Math.min(r,h/2,w/2); c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath()}
+function fitText(c,t,max){ if(c.measureText(t).width<=max) return t; let s=t; while(s.length>1&&c.measureText(s+'…').width>max) s=s.slice(0,-1); return s+'…' }
+function wrapLines(c,t,max){
+  const out=[]; String(t).split('\n').forEach(par=>{ let line=''; par.split(/\s+/).filter(Boolean).forEach(w=>{ const tt=line?line+' '+w:w; if(c.measureText(tt).width>max&&line){out.push(line); line=w} else line=tt }); out.push(line) });
+  return out;
+}
+async function ficheBlob(pid){
+  const s=PLID[pid], T=teamsOf(pid), ST=sumTeams(pid), all=allOf(pid);
+  const groups=T?ST.map(t=>({t,it:all.filter(o=>o.x.team===t.id)})):[{t:null,it:all}];
+  const S=statsOf(itemsFor(pid,ST)), R=scorers(pid,ST), remark=(rem[pid]||'').trim();
+  const one=ST&&ST.length===1?ST[0]:null;
+  const title=`${s.titre}${one?' · '+tLabel(one):''}`;
+  const chips=[['📅 '+longDate(s.date)+' '+dt(s.date).getFullYear(),0],['👥 '+presCount(pid,ST)+' joueur'+(presCount(pid,ST)>1?'s':''),0]];
+  if(one&&one.edu&&one.edu.trim()) chips.push(['Éducateur : '+one.edu.trim(),1]);
+  const FD="'Fredoka',sans-serif", FN="'Nunito',sans-serif";
+  try{ await Promise.all(['700 60px Fredoka','800 26px Nunito','700 30px Nunito','600 32px Nunito'].map(f=>document.fonts.load(f))) }catch(e){}
+  let logo=null; try{ logo=new Image(); logo.src='img/logo.png'; await logo.decode() }catch(e){ logo=null }
+  const W=1080, P=52;
+  function layout(c,draw){
+    let y=0;
+    // En-tête bleu
+    c.font=`700 60px ${FD}`; let tf=60; while(tf>36&&c.measureText(title).width>W-208-P){tf-=2; c.font=`700 ${tf}px ${FD}`}
+    c.font=`800 26px ${FN}`;
+    let cx=P, cy=204; const cpos=[];
+    chips.forEach(([t,g])=>{ const w=c.measureText(t).width+52; if(cx+w>W-P&&cx>P){cx=P; cy+=78} cpos.push([t,g,cx,cy,w]); cx+=w+18 });
+    const hb=cy+62+44;
+    if(draw){
+      c.fillStyle=FC.club; c.fillRect(0,0,W,hb); c.fillStyle=FC.gold; c.fillRect(0,hb,W,12);
+      c.fillStyle='#fff'; c.beginPath(); c.arc(P+64,48+64,64,0,Math.PI*2); c.fill();
+      if(logo){ c.save(); c.beginPath(); c.arc(P+64,48+64,56,0,Math.PI*2); c.clip(); c.drawImage(logo,P+8,56,112,112); c.restore() }
+      c.fillStyle='#cfd9ff'; c.font=`800 26px ${FN}`; c.textBaseline='alphabetic'; c.textAlign='left'; c.fillText('FC MARMANDE 47 · U8',208,92);
+      c.fillStyle='#fff'; c.font=`700 ${tf}px ${FD}`; c.fillText(title,208,92+tf+6);
+      cpos.forEach(([t,g,x,yy,w])=>{ rrect(c,x,yy,w,62,31); c.fillStyle=g?FC.gold:'rgba(255,255,255,.16)'; c.fill(); c.fillStyle=g?FC.goldInk:'#fff'; c.font=`800 26px ${FN}`; c.fillText(t,x+26,yy+41) });
+    }
+    y=hb+12+56;
+    const label=t=>{ if(draw){c.fillStyle=FC.muted; c.font=`800 26px ${FN}`; c.textAlign='left'; c.fillText(t.toUpperCase(),P,y+20)} y+=46 };
+    // Matchs
+    label('Les matchs');
+    groups.forEach(gp=>{
+      if(groups.length>1){ if(draw){c.fillStyle=FC.club; c.font=`700 36px ${FD}`; c.textAlign='left'; c.fillText(tLabel(gp.t)+(gp.t.edu?' · '+gp.t.edu:''),P,y+30)} y+=58 }
+      if(!gp.it.length){ if(draw){c.fillStyle=FC.muted; c.font=`700 30px ${FN}`; c.textAlign='left'; c.fillText('Aucun match noté.',P,y+30)} y+=60 }
+      const cw=(W-2*P-40)/3, ch=214;
+      gp.it.forEach((o,i)=>{
+        const col=i%3, x=P+col*(cw+20), yy=y+Math.floor(i/3)*(ch+20), x0=o.x, r=resOf(x0), rc=FC.res[r];
+        if(draw){
+          rrect(c,x,yy,cw,ch,36); c.fillStyle=FC.soft; c.fill();
+          c.textAlign='center'; c.fillStyle=FC.club; c.font=`700 60px ${FD}`; c.fillText(`${x0.sf} – ${x0.sa}`,x+cw/2,yy+90);
+          c.fillStyle=FC.muted; c.font=`700 26px ${FN}`; c.fillText(fitText(c,x0.opp&&x0.opp.trim()?'contre '+x0.opp.trim():'Match '+(i+1),cw-28),x+cw/2,yy+138);
+          c.font=`800 22px ${FN}`; const tw=c.measureText(rc[2].toUpperCase()).width+36;
+          rrect(c,x+(cw-tw)/2,yy+158,tw,44,22); c.fillStyle=rc[1]; c.fill(); c.lineWidth=4; c.strokeStyle=rc[0]; c.stroke();
+          c.fillStyle=FC.ink; c.fillText(rc[2].toUpperCase(),x+cw/2,yy+188);
+        }
+      });
+      if(gp.it.length) y+=Math.ceil(gp.it.length/3)*(ch+20)+20;
+    });
+    // Bilan
+    if(S.n){
+      if(draw){
+        rrect(c,P,y,W-2*P,92,32); c.fillStyle=FC.ink; c.fill();
+        c.textAlign='left'; c.fillStyle='#fff'; c.font=`700 30px ${FN}`; c.fillText('Bilan',P+32,y+57);
+        const seg=[[S.V,1],[' V · ',0],[S.N,1],[' N · ',0],[S.D,1],[' D    ',0],[S.bf,1],[' marqué'+(S.bf>1?'s':'')+' · ',0],[S.ba,1],[' encaissé'+(S.ba>1?'s':''),0]];
+        const fnt=g=>g?`700 36px ${FD}`:`700 30px ${FN}`;
+        let tw=0; seg.forEach(([t,g])=>{c.font=fnt(g); tw+=c.measureText(String(t)).width});
+        let sx=W-P-32-tw; seg.forEach(([t,g])=>{c.font=fnt(g); c.fillStyle=g?FC.gold:'#fff'; c.fillText(String(t),sx,y+58); sx+=c.measureText(String(t)).width});
+      }
+      y+=92+52;
+    }
+    // Buteurs et passeurs
+    label('Buteurs et passeurs');
+    const cB=W-P-210, cP=W-P-70;
+    if(!R.length){ if(draw){c.fillStyle=FC.muted; c.font=`700 30px ${FN}`; c.textAlign='left'; c.fillText('Aucun but ni passe décisive noté.',P,y+30)} y+=70 }
+    else{
+      if(draw){
+        c.fillStyle=FC.muted; c.font=`800 22px ${FN}`; c.textAlign='left'; c.fillText('JOUEUR',P+16,y+44);
+        c.textAlign='center'; c.font=`26px ${FN}`; c.fillText('⚽',cB,y+22); c.fillText('🅰️',cP,y+22);
+        c.font=`800 22px ${FN}`; c.fillText('BUTS',cB,y+58); c.fillText('PASSES',cP,y+58);
+        c.fillStyle=FC.line; c.fillRect(P,y+76,W-2*P,4);
+      }
+      y+=80;
+      R.forEach(r=>{
+        if(draw){
+          c.textAlign='left'; c.fillStyle=FC.ink; c.font=`700 32px ${FN}`; c.fillText(fitText(c,r.n+(T&&!one&&r.t?' ('+r.t+')':''),cB-P-80),P+16,y+52);
+          c.textAlign='center'; c.fillText(String(r.g),cB,y+52); c.fillText(String(r.a),cP,y+52);
+          c.fillStyle=FC.line; c.fillRect(P,y+80,W-2*P,2);
+        }
+        y+=82;
+      });
+      y+=44;
+    }
+    // Mot de l'éducateur
+    if(remark){
+      label("Le mot de l'éducateur");
+      c.font=`600 32px ${FN}`; const L=wrapLines(c,remark,W-2*P-70), bh=L.length*46+48;
+      if(draw){
+        rrect(c,P,y,W-2*P,bh,24); c.fillStyle=FC.remBg; c.fill();
+        c.save(); rrect(c,P,y,W-2*P,bh,24); c.clip(); c.fillStyle=FC.gold; c.fillRect(P,y,10,bh); c.restore();
+        c.fillStyle=FC.ink; c.textAlign='left'; c.font=`600 32px ${FN}`; L.forEach((l,i)=>c.fillText(l,P+38,y+56+i*46));
+      }
+      y+=bh+40;
+    }
+    // Pied
+    if(draw){c.fillStyle=FC.light; c.font=`700 24px ${FN}`; c.textAlign='center'; c.fillText('Carnet de terrain U8 · FC Marmande 47',W/2,y+30)}
+    y+=72;
+    return y;
+  }
+  const m=document.createElement('canvas').getContext('2d'); const H=Math.ceil(layout(m,false));
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const c=cv.getContext('2d');
+  c.save(); rrect(c,0,0,W,H,56); c.clip(); c.fillStyle='#fff'; c.fillRect(0,0,W,H); layout(c,true); c.restore();
+  return await new Promise((ok,ko)=>cv.toBlob(b=>b?ok(b):ko(new Error('image')),'image/png'));
+}
+const ficheName=pid=>{const s=PLID[pid], ST=sumTeams(pid), one=ST&&ST.length===1?ST[0]:null; return ('resume-'+s.titre+(one?'-'+tLabel(one):'')+'.png').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-zA-Z0-9.]+/g,'-').toLowerCase()};
+function ficheBlock(pid){
+  const f=sumImg[pid], ok=f&&f.sig===reportText(pid);
+  if(!ok) return `<button class="btn fin" data-mt="img|${pid}" style="margin-top:12px">📷 Créer l'image pour les parents</button>`;
+  const share=!!(navigator.canShare&&navigator.canShare({files:[f.file]}));
+  return `<div class="fiche"><img src="${f.url}" alt="Fiche du résumé du plateau"><div class="row" style="margin-top:10px">${share?`<button class="btn" data-mt="share|${pid}">📤 Partager (WhatsApp…)</button>`:''}<a class="btn${share?' alt':''}" href="${f.url}" download="${esc(f.file.name)}">⬇️ Télécharger l'image</a></div><p class="saved">${share?'Choisis WhatsApp puis le groupe des parents.':"Sur téléphone, tu peux aussi appuyer longtemps sur l'image pour l'enregistrer ou la copier."}</p></div>`;
+}
+document.addEventListener('click',ev=>{
+  const t=ev.target.closest('[data-mt^="img|"],[data-mt^="share|"]'); if(!t) return;
+  ev.preventDefault(); ev.stopImmediatePropagation();
+  const [act,P]=t.dataset.mt.split('|');
+  if(act==='img'){
+    t.disabled=true; t.textContent='Création de l\'image…';
+    ficheBlob(P).then(b=>{
+      if(sumImg[P]) try{URL.revokeObjectURL(sumImg[P].url)}catch(e){}
+      const file=new File([b],ficheName(P),{type:'image/png'});
+      sumImg[P]={url:URL.createObjectURL(b),file,sig:reportText(P)}; keep();
+    }).catch(()=>{t.disabled=false; t.textContent="Impossible de créer l'image. Réessaie."});
+  }else if(act==='share'){
+    const f=sumImg[P]; if(!f) return;
+    navigator.share({files:[f.file],title:'Résumé du plateau'}).catch(()=>{});
+  }
+},true);
 
 /* ---------- Données des éducateurs : lecture seule, réservé à l'administrateur ---------- */
 const EDU={rows:null,emails:{},at:0,busy:false,err:''};

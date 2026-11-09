@@ -889,6 +889,14 @@ function vAdmin(){
   <p class="muted" id="admMsg" role="status" style="font-size:.92rem;margin:10px 0 0"></p>
   <button class="btn" type="submit" style="margin-top:10px">Créer le compte</button></form></div>
   <div class="sec"><h2>Comptes existants</h2><div id="admList"><p class="muted">Chargement…</p></div></div>
+  <div class="card field"><h2>Tester un accès</h2>
+  <p class="muted" style="font-size:.9rem">Vérifie qu'un email et un mot de passe marchent, sans te déconnecter.</p>
+  <label for="admTEmail" class="muted" style="font-size:.9rem;display:block;margin-top:8px">Email</label>
+  <input class="inp" id="admTEmail" type="email" inputmode="email" autocapitalize="off" spellcheck="false" autocomplete="off">
+  <label for="admTPass" class="muted" style="font-size:.9rem;display:block;margin-top:10px">Mot de passe</label>
+  <input class="inp" id="admTPass" type="text" autocapitalize="off" spellcheck="false" autocomplete="off">
+  <button class="btn" id="admTBtn" type="button" style="margin-top:10px">Tester la connexion</button>
+  <p id="admTMsg" role="status" style="font-size:.95rem;margin:10px 0 0;font-weight:700;word-break:break-word"></p></div>
   </div>`;
 }
 
@@ -2241,6 +2249,19 @@ async function admLoad(){
   }catch(e){box.innerHTML='<p class="muted" role="alert">'+esc(e.message)+'</p>'}
 }
 window.__u8admin={load:admLoad};
+document.addEventListener('click',async ev=>{
+  const b=ev.target.closest('#admTBtn'); if(!b||!window.__u8isAdmin()) return; ev.preventDefault();
+  const em=($('admTEmail').value||'').trim().toLowerCase(), pw=($('admTPass').value||'').trim(), out=$('admTMsg');
+  if(!em||!pw){out.textContent='Écris un email et un mot de passe.'; return}
+  b.disabled=true; out.textContent='Test en cours…';
+  try{
+    const t=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false,storageKey:'u8-test'}});
+    const r=await t.auth.signInWithPassword({email:em,password:pw});
+    if(r.error) out.textContent='❌ Refusé : '+frErr(r.error)+' — détail Supabase : '+(r.error.message||'')+(r.error.code?' ['+r.error.code+']':'')+(r.error.status?' ('+r.error.status+')':'');
+    else{ out.textContent='✅ Connexion OK pour '+em+'. Cet accès marche.'; try{await t.auth.signOut({scope:'local'})}catch(e){} }
+  }catch(e){ out.textContent='❌ Erreur : '+String(e&&e.message||e) }
+  b.disabled=false;
+});
 document.addEventListener('click',ev=>{
   const b=ev.target.closest('[data-admcopy]'); if(!b||!lastCreds) return; ev.preventDefault();
   const t='Carnet de terrain U8 : https://dondonnyai.github.io/carnet-u8/\nEmail : '+lastCreds.email+'\nMot de passe : '+lastCreds.password;

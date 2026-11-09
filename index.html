@@ -926,7 +926,7 @@ function vOutils(){
   ${(window.__u8isAdmin&&window.__u8isAdmin())?`<div class="sec" style="margin-top:6px"><h2>Administration</h2><button class="tool cat-placement" data-go="admin"><span class="ic">${I.user}</span><span><b>Comptes éducateurs</b><span class="s">Créer, voir et supprimer les accès</span></span></button><button class="tool cat-match" data-go="edus"><span class="ic">${I.eye}</span><span><b>Données des éducateurs</b><span class="s">Voir tout ce qu'ils notent (lecture seule)</span></span></button></div>`:''}
   <div class="sec" style="margin-top:6px"><h2>Compte</h2>
   <button class="tool cat-duel" data-logout><span class="ic">${I.user}</span><span><b>Se déconnecter</b><span class="s">${esc(window.__u8email?window.__u8email():'')} · efface les données de cet appareil (elles restent dans ton compte)</span></span></button></div>
-  </div><button class="chip theme-toggle" data-theme-toggle>Changer le thème clair / sombre</button>`;
+  </div><button class="chip theme-toggle" data-theme-toggle>Changer le thème clair / sombre</button><p class="saved" style="text-align:center;margin-top:10px">Version de l'app : 9 nov. · 3 (équipes par éducateur)</p>`;
 }
 const TESTS=[
  ['Vitesse','secondes','15 m. Départ debout, un pied sur la ligne. Chrono lancé au « top », arrêté quand le torse passe la ligne d\'arrivée.'],

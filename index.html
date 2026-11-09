@@ -2231,7 +2231,9 @@ async function call(body){
     throw new Error(m||"Le service d'administration ne répond pas. Il n'est peut-être pas encore installé.");
   }
   if(r.data&&r.data.error) throw new Error(r.data.error);
-  return r.data;
+  const d=r.data||{}, bad=body.action==='list'?!Array.isArray(d.users):d.ok!==true;
+  if(bad) throw new Error("La fonction admin-users répond, mais ce n'est pas le bon code (sans doute l'exemple de Supabase). Rien n'a été créé. Remplace son code par celui du fichier supabase/functions/admin-users/index.ts, puis Deploy.");
+  return d;
 }
 const admMsg=(t)=>{const m=$('admMsg'); if(m) m.textContent=t||''};
 const fdate=s=>{try{return s?new Date(s).toLocaleDateString('fr-FR'):'jamais'}catch(e){return ''}};

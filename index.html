@@ -516,6 +516,21 @@ details.acc .in img{display:block;width:100%;border-radius:14px;background:var(-
 .sumg .tag{min-width:52px;justify-content:center}
 .sumrem{white-space:pre-wrap}
 
+/* ===== Données des éducateurs ===== */
+.edl{padding:6px 14px}
+.edr{padding:9px 0;border-top:1px solid var(--line)}
+.edr:first-child{border-top:0}
+.edr b{display:block;font:600 1rem var(--f-display)}
+.edr span{display:block;font-size:.9rem;color:var(--muted);margin-top:2px}
+.edc{margin-bottom:10px}
+.edc>b{display:block;font:600 1.05rem var(--f-display);color:var(--club-ink);margin-bottom:6px}
+.edc p{margin-top:6px;white-space:pre-wrap}
+.edc .tag{min-width:48px;display:inline-flex;justify-content:center;margin-right:6px}
+.edt{overflow-x:auto}
+.edt .sct{font-size:.86rem}
+.edt .sct th{letter-spacing:0;padding:4px 3px}
+.edt .sct td{padding:7px 3px}
+.edt .sct th:nth-child(n+2),.edt .sct td:nth-child(n+2){width:auto}
 /* ===== Connexion et synchro ===== */
 #gate{position:fixed;inset:0;z-index:1000;overflow:auto;background:var(--bg);color:var(--ink);display:flex;padding:24px 16px calc(24px + env(safe-area-inset-bottom,0px))}
 .gbox{margin:auto;width:100%;max-width:380px;display:flex;flex-direction:column;gap:10px;text-align:center}
@@ -633,7 +648,7 @@ const view=document.getElementById('view'), topbar=document.getElementById('top'
 const TABS=[['seances','Séances',I.cal],['blocs','Blocs',I.layers],['exos','Exercices',I.ex],['joueurs','Joueurs','<span class="emo" aria-hidden="true">👥</span>'],['favs','Favoris',I.star],['outils','Outils',I.tools]];
 let route='seances', trail=[], scrollMem={};
 let q='', filt='all', onlyMain=false;
-function tabOf(r){const h=r.split(':')[0];return {seances:'seances',seance:'seances',plan:'seances',blocs:'blocs',bloc:'blocs',grille:'blocs',cr:'blocs',exos:'exos',exo:'exos',favs:'favs',outils:'outils',tests:'outils',fiche:'outils',joueurs:'joueurs',joueur:'joueurs',plateau:'seances',lundi:'outils',terrain:'outils',principes:'outils',legende:'outils',admin:'outils','plan-img':'exos'}[h]||'seances'}
+function tabOf(r){const h=r.split(':')[0];return {seances:'seances',seance:'seances',plan:'seances',blocs:'blocs',bloc:'blocs',grille:'blocs',cr:'blocs',exos:'exos',exo:'exos',favs:'favs',outils:'outils',tests:'outils',fiche:'outils',joueurs:'joueurs',joueur:'joueurs',plateau:'seances',lundi:'outils',terrain:'outils',principes:'outils',legende:'outils',admin:'outils',edus:'outils',edu:'outils','plan-img':'exos'}[h]||'seances'}
 function go(r,opts){
   scrollMem[route]=window.scrollY;
   const isTab=TABS.some(t=>t[0]===r);
@@ -685,6 +700,8 @@ function renderView(){
   else if(h==='principes') html=vPrincipes();
   else if(h==='legende') html=vLegende();
   else if(h==='admin') html=vAdmin();
+  else if(h==='edus') html=vEdus();
+  else if(h==='edu') html=vEdu(route.slice(4));
   else if(h==='plan-img') html=vImg(route.slice(9));
   else if(h==='blocs') html=vBlocs();
   else if(h==='bloc') html=vBloc(a);
@@ -887,7 +904,7 @@ function vOutils(){
   <button class="tool cat-technique" data-bk="import"><span class="ic">${I.copy}</span><span><b>Restaurer une sauvegarde</b><span class="s">Remplace les données de ce téléphone</span></span></button>
   <input type="file" id="bkfile" accept=".json,application/json" hidden>
   <p class="saved" id="bkmsg" role="status">Fais une sauvegarde de temps en temps et envoie-la-toi (mail, messagerie).</p></div>
-  ${(window.__u8isAdmin&&window.__u8isAdmin())?`<div class="sec" style="margin-top:6px"><h2>Administration</h2><button class="tool cat-placement" data-go="admin"><span class="ic">${I.user}</span><span><b>Comptes éducateurs</b><span class="s">Créer, voir et supprimer les accès</span></span></button></div>`:''}
+  ${(window.__u8isAdmin&&window.__u8isAdmin())?`<div class="sec" style="margin-top:6px"><h2>Administration</h2><button class="tool cat-placement" data-go="admin"><span class="ic">${I.user}</span><span><b>Comptes éducateurs</b><span class="s">Créer, voir et supprimer les accès</span></span></button><button class="tool cat-match" data-go="edus"><span class="ic">${I.eye}</span><span><b>Données des éducateurs</b><span class="s">Voir tout ce qu'ils notent (lecture seule)</span></span></button></div>`:''}
   <div class="sec" style="margin-top:6px"><h2>Compte</h2>
   <button class="tool cat-duel" data-logout><span class="ic">${I.user}</span><span><b>Se déconnecter</b><span class="s">${esc(window.__u8email?window.__u8email():'')} · efface les données de cet appareil (elles restent dans ton compte)</span></span></button></div>
   </div><button class="chip theme-toggle" data-theme-toggle>Changer le thème clair / sombre</button>`;
@@ -1412,6 +1429,77 @@ document.addEventListener('input',ev=>{
   }
 });
 
+/* ---------- Données des éducateurs : lecture seule, réservé à l'administrateur ---------- */
+const EDU={rows:null,emails:{},at:0,busy:false,err:''};
+const isAdm=()=>!!(window.__u8isAdmin&&window.__u8isAdmin());
+const onEdu=()=>route==='edus'||route.startsWith('edu:');
+function loadEdus(force){
+  if(!window.__u8others||EDU.busy||(!force&&EDU.rows&&Date.now()-EDU.at<60000)) return;
+  EDU.busy=true; EDU.err='';
+  const lst=window.__u8adminList?Promise.resolve().then(()=>window.__u8adminList()).catch(()=>null):Promise.resolve(null);
+  Promise.all([Promise.resolve().then(()=>window.__u8others()),lst]).then(([rows,l])=>{
+    EDU.rows=isArr(rows)?rows.filter(r=>r&&r.owner):[];
+    if(l&&isArr(l.users)) l.users.forEach(u=>{if(u&&u.id) EDU.emails[u.id]=u.email});
+    EDU.at=Date.now(); EDU.busy=false; if(onEdu()) keep();
+  }).catch(()=>{EDU.busy=false; EDU.at=Date.now(); EDU.err='Impossible de lire les données des éducateurs. Vérifie ta connexion et réessaie.'; if(onEdu()) keep();});
+}
+const eduName=o=>EDU.emails[o]||('Éducateur '+String(o).slice(0,6));
+function eduData(o){const d={}; (EDU.rows||[]).filter(r=>r.owner===o).forEach(r=>{d[r.key]=r.value; d._at=!d._at||r.updated_at>d._at?r.updated_at:d._at}); return d}
+const plain=v=>v&&typeof v==='object'&&!isArr(v);
+const sOf=id=>SEID[id]||PLID[id]||null;
+const sLab=id=>{const s=sOf(id); return s?`${longDate(s.date)} · ${s.titre||s.theme||''}`:id};
+const sDate=id=>{const s=sOf(id); return s?s.date:'0000'};
+const byDateDesc=(a,b)=>sDate(b)<sDate(a)?-1:sDate(b)>sDate(a)?1:0;
+function vEdus(){
+  renderChrome('Données des éducateurs');
+  if(!isAdm()) return `<div class="empty"><b>Accès réservé</b>Cette page est réservée à l'administrateur.</div>`;
+  loadEdus();
+  let h=`<div class="stack"><div class="note"><span><b>Lecture seule.</b> Tout ce que les autres éducateurs ont noté : joueurs, présences, remarques, plateaux, tests et comptes-rendus. Tu ne peux rien modifier ici.</span></div>`;
+  if(EDU.err) h+=`<div class="note"><span>${esc(EDU.err)}</span></div>`;
+  if(!EDU.rows) return h+`<p class="muted">Chargement…</p></div>`;
+  const O=[...new Set(EDU.rows.map(r=>r.owner))];
+  if(!O.length) h+=`<div class="empty"><b>Rien pour l'instant</b>Aucun autre éducateur n'a encore noté de données.</div>`;
+  h+=O.map(o=>{const d=eduData(o), np=isArr(d.players)?d.players.length:0, nr=plain(d.rem)?Object.keys(d.rem).filter(k=>String(d.rem[k]).trim()).length:0;
+    return `<button class="tool cat-placement" data-go="edu:${esc(o)}"><span class="ic">${I.user}</span><span><b style="word-break:break-all">${esc(eduName(o))}</b><span class="s">${np} joueur${np>1?'s':''} · ${nr} remarque${nr>1?'s':''}${d._at?' · mis à jour le '+esc(new Date(d._at).toLocaleDateString('fr-FR')):''}</span></span></button>`}).join('');
+  return h+`<button class="chip" data-edu="refresh" style="margin-top:6px">↻ Actualiser</button></div>`;
+}
+function vEdu(o){
+  renderChrome(EDU.rows?eduName(o):'Éducateur');
+  if(!isAdm()) return `<div class="empty"><b>Accès réservé</b>Cette page est réservée à l'administrateur.</div>`;
+  loadEdus();
+  if(!EDU.rows) return `<div class="stack"><p class="muted">Chargement…</p></div>`;
+  const d=eduData(o), P=isArr(d.players)?d.players.filter(p=>p&&p.id):[], att=plain(d.att)?d.att:{}, rem=plain(d.rem)?d.rem:{}, mtx=plain(d.mt)?d.mt:{}, res=plain(d.res)?d.res:{}, cr=plain(d.cr)?d.cr:{};
+  const pn={}; P.forEach(p=>pn[p.id]=String(p.name||'').trim()||'Sans prénom');
+  Object.keys(mtx).forEach(k=>{const ts=mtx[k]&&mtx[k].teams; if(isArr(ts)) ts.forEach(t=>{if(t&&plain(t.pn)) Object.keys(t.pn).forEach(i=>{if(!pn[i]) pn[i]=String(t.pn[i])})})});
+  const N=i=>pn[i]||NM(i)||'';
+  const nm=ob=>Object.keys(ob||{}).filter(k=>ob[k]>0&&N(k)).map(k=>N(k)+(ob[k]>1?' ×'+ob[k]:'')).join(', ');
+  let h=`<div class="stack"><div class="note"><span><b>${esc(eduName(o))}</b> · lecture seule${d._at?' · mis à jour le '+esc(new Date(d._at).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'})):''}</span></div>`;
+  // Joueurs
+  const ids=Object.keys(att);
+  h+=`<div class="sec"><h2>👥 Joueurs · ${P.length}</h2>`+(P.length?`<div class="card edl">${P.slice().sort((a,b)=>N(a.id).localeCompare(N(b.id),'fr')).map(p=>{let pr=0,ab=0; ids.forEach(s=>{const v=att[s]&&att[s][p.id]; if(v==='p')pr++; else if(v==='a')ab++}); return `<div class="edr"><b>${esc(N(p.id))}</b><span>${pr+ab?`${pr} présence${pr>1?'s':''} · ${Math.round(100*pr/(pr+ab))} %`:'aucune présence notée'}</span></div>`}).join('')}</div>`:`<p class="muted">Aucun joueur.</p>`)+`</div>`;
+  // Présences
+  const A=ids.filter(s=>plain(att[s])).sort(byDateDesc);
+  h+=`<div class="sec"><h2>✅ Présences</h2>`+(A.length?`<div class="card edl">${A.map(s=>{const v=att[s], pr=Object.keys(v).filter(k=>v[k]==='p'), ab=Object.keys(v).filter(k=>v[k]==='a'); return `<div class="edr"><b>${esc(sLab(s))}</b><span>${pr.length} présent${pr.length>1?'s':''} · ${ab.length} absent${ab.length>1?'s':''}${ab.length?' : '+esc(ab.map(N).filter(Boolean).join(', ')):''}</span></div>`}).join('')}</div>`:`<p class="muted">Aucune présence notée.</p>`)+`</div>`;
+  // Remarques
+  const R=Object.keys(rem).filter(k=>String(rem[k]||'').trim()).sort(byDateDesc);
+  h+=`<div class="sec"><h2>${I.pen} Remarques</h2>`+(R.length?R.map(s=>`<div class="card edc"><b>${esc(sLab(s))}</b><p>${esc(String(rem[s]).trim())}</p></div>`).join(''):`<p class="muted">Aucune remarque.</p>`)+`</div>`;
+  // Plateaux
+  const M=Object.keys(mtx).filter(k=>mtx[k]&&isArr(mtx[k].list)&&mtx[k].list.length).sort(byDateDesc);
+  h+=`<div class="sec"><h2>⚽ Plateaux</h2>`+(M.length?M.map(k=>{const v=mtx[k]; return `<div class="card edc"><b>${esc(sLab(k))}</b>${v.list.map((x,i)=>{const sf=+x.sf||0, sa=+x.sa||0, r=sf>sa?'v':sf<sa?'d':'n', bt=nm(x.g), ps=nm(x.a); return `<p><span class="tag ${r}">${sf}-${sa}</span> Match ${i+1}${x.team?' · équipe '+esc(x.team):''}${x.opp&&String(x.opp).trim()?' · '+esc(String(x.opp).trim()):''}${bt?`<br><span class="muted">⚽ ${esc(bt)}</span>`:''}${ps?`<br><span class="muted">🅰️ ${esc(ps)}</span>`:''}</p>`}).join('')}</div>`}).join(''):`<p class="muted">Aucun match noté.</p>`)+`</div>`;
+  // Tests
+  const val=(p,per,k)=>{const x=res[p]&&res[p][per]; if(!plain(x)) return ''; if(k==='j'){const a=['j1','j2','j3'].map(q=>toNum(x[q])).filter(n=>n!=null); return a.length?String(Math.max(...a)):''} return x[k]==null?'':String(x[k])};
+  const per=Object.keys(PER).filter(c=>P.some(p=>TF.some(t=>val(p.id,c,t.k)!=='')));
+  h+=`<div class="sec"><h2>⏱️ Tests</h2>`+(per.length?per.map(c=>`<div class="card edc"><b>${esc(PER[c][2])}</b><div class="edt"><table class="sct"><thead><tr><th>Joueur</th>${TF.map(t=>`<th>${esc(t.lab.split(' ')[0])}</th>`).join('')}</tr></thead><tbody>${P.filter(p=>TF.some(t=>val(p.id,c,t.k)!=='')).map(p=>`<tr><td>${esc(N(p.id))}</td>${TF.map(t=>`<td>${esc(val(p.id,c,t.k))||'–'}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>`).join(''):`<p class="muted">Aucun test noté.</p>`)+`</div>`;
+  // Comptes-rendus
+  const C=[]; Object.keys(cr).forEach(b=>{if(plain(cr[b])) Object.keys(cr[b]).forEach(p=>{const f=cr[b][p]; if(plain(f)){const t=Object.keys(f).filter(k=>String(f[k]||'').trim()); if(t.length) C.push({b,p,f,t})}})});
+  h+=`<div class="sec"><h2>📝 Comptes-rendus</h2>`+(C.length?C.map(c=>`<div class="card edc"><b>${esc(N(c.p)||'Joueur')} · bloc ${esc(c.b)}</b>${c.t.map(k=>`<p>${esc(String(c.f[k]).trim())}</p>`).join('')}</div>`).join(''):`<p class="muted">Aucun compte-rendu.</p>`)+`</div>`;
+  return h+`<button class="chip" data-edu="refresh">↻ Actualiser</button></div>`;
+}
+document.addEventListener('click',ev=>{
+  const b=ev.target.closest('[data-edu]'); if(!b) return;
+  ev.preventDefault(); loadEdus(true);
+});
+
 /* ---------- Blocs ---------- */
 function ul(a){return `<ul class="bl">${a.map(t=>`<li>${xref(t,1)}</li>`).join('')}</ul>`}
 function vBlocs(){
@@ -1736,6 +1824,13 @@ window.__u8pill=()=>{
 };
 window.__u8email=()=>(session&&session.user&&session.user.email)||'';
 window.__u8uid=()=>(session&&session.user&&session.user.id)||'';
+/* Admin : toutes les données des autres éducateurs (lecture seule, règle RLS "karim lit tout") */
+window.__u8others=async()=>{
+  if(!sb||!session) return [];
+  const r=await sb.from('carnet_data').select('owner,key,value,updated_at').neq('owner',session.user.id);
+  if(r.error) throw r.error;
+  return r.data||[];
+};
 /* Plateaux partagés : lecture seule des matchs des autres éducateurs (autorisée par les règles RLS) */
 window.__u8shared=async()=>{
   if(!sb||!session||!enabled||!navigator.onLine) return [];
@@ -1995,6 +2090,7 @@ async function admLoad(){
   }catch(e){box.innerHTML='<p class="muted" role="alert">'+esc(e.message)+'</p>'}
 }
 window.__u8admin={load:admLoad};
+window.__u8adminList=()=>window.__u8isAdmin()?call({action:'list'}):Promise.resolve(null);
 document.addEventListener('submit',async ev=>{
   if(!ev.target||ev.target.id!=='admForm') return;
   ev.preventDefault();

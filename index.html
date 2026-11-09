@@ -2043,11 +2043,11 @@ function showGate(mode,msg){
   const on=(id,ev,fn)=>{const x=$(id); if(x) x.addEventListener(ev,fn)};
   on('fLogin','submit',async ev=>{
     ev.preventDefault(); const f=ev.target;
-    const em=$('gEmail').value.trim(), pw=$('gPass').value;
+    const em=$('gEmail').value.trim().toLowerCase(), pw=$('gPass').value.trim();
     if(!em||!pw) return say('Écris ton email et ton mot de passe.');
     lastEmail=em; lock(f,true); say('');
     try{const r=await sb.auth.signInWithPassword({email:em,password:pw}); if(r.error) throw r.error; session=r.data.session; await enter()}
-    catch(e){lock(f,false); say(frErr(e))}
+    catch(e){lock(f,false); say(frErr(e)+((e&&(e.code||e.status))?' (code : '+(e.code||'')+(e.status?' '+e.status:'')+')':''))}
   });
   on('gForgot','click',()=>{lastEmail=($('gEmail')||{}).value||lastEmail; showGate('forgot')});
   on('gBack','click',()=>{lastEmail=($('gEmail')||{}).value||lastEmail; showGate('login')});
@@ -2234,13 +2234,19 @@ async function admLoad(){
   try{
     const d=await call({action:'list'});
     const L=(d.users||[]).sort((a,b)=>(b.admin-a.admin)||String(a.email).localeCompare(String(b.email)));
-    box.innerHTML=(lastCreds?'<div class="note" style="margin-bottom:10px"><span><b>Accès prêt.</b> À transmettre à l\'éducateur (ce mot de passe ne sera plus affiché) :<br>Email : <b>'+esc(lastCreds.email)+'</b><br>Mot de passe : <b>'+esc(lastCreds.password)+'</b></span></div>':'')+
+    box.innerHTML=(lastCreds?'<div class="note" style="margin-bottom:10px"><span><b>Accès prêt.</b> À transmettre à l\'éducateur (ce mot de passe ne sera plus affiché) :<br>Email : <b>'+esc(lastCreds.email)+'</b><br>Mot de passe : <b style="font-family:monospace;font-size:1.1em;letter-spacing:.04em">'+esc(lastCreds.password)+'</b><br><button class="btn" data-admcopy style="margin-top:8px">Copier l\'email et le mot de passe</button></span></div>':'')+
       (L.length?L.map(u=>'<div class="card" style="margin-bottom:8px"><div style="font-weight:700;word-break:break-all">'+esc(u.email)+(u.admin?' · administrateur':'')+'</div>'+
         '<div class="muted" style="font-size:.88rem">Créé le '+fdate(u.created_at)+' · dernière connexion : '+fdate(u.last_sign_in_at)+'</div>'+
         (u.admin?'':'<div class="row" style="margin-top:8px;gap:8px"><button class="btn sec2" data-adm="reset" data-id="'+esc(u.id)+'" data-email="'+esc(u.email)+'">Nouveau mot de passe</button><button class="btn alt" data-adm="del" data-id="'+esc(u.id)+'" data-email="'+esc(u.email)+'">Supprimer</button></div>')+'</div>').join(''):'<p class="muted">Aucun compte.</p>');
   }catch(e){box.innerHTML='<p class="muted" role="alert">'+esc(e.message)+'</p>'}
 }
 window.__u8admin={load:admLoad};
+document.addEventListener('click',ev=>{
+  const b=ev.target.closest('[data-admcopy]'); if(!b||!lastCreds) return; ev.preventDefault();
+  const t='Carnet de terrain U8 : https://dondonnyai.github.io/carnet-u8/\nEmail : '+lastCreds.email+'\nMot de passe : '+lastCreds.password;
+  const done=()=>{b.textContent='Copié ! Colle-le dans un message à l\'éducateur.'};
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done).catch(()=>{prompt('Copie ce texte :',t)}); else prompt('Copie ce texte :',t);
+});
 window.__u8adminList=()=>window.__u8isAdmin()?call({action:'list'}):Promise.resolve(null);
 document.addEventListener('submit',async ev=>{
   if(!ev.target||ev.target.id!=='admForm') return;
